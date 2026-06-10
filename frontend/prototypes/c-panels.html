@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>C · Panels — eth-explorer home prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./bitwise.css" />
+<style>
+  .panel-grid {
+    display: grid;
+    gap: clamp(1rem, 1.5vw, 1.5rem);
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 1100px) { .panel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Gauge panel */
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(1rem, 1.6vw, 1.5rem); }
+  .gauge-svg { width: 240px; height: 140px; }
+  .gauge-readout { text-align: center; }
+  .gauge-readout .v {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 300;
+    font-stretch: 550%;
+    font-size: clamp(2.75rem, 5vw, 4.5rem);
+    line-height: 0.95;
+    color: var(--text-strong);
+    letter-spacing: -0.02em;
+    font-feature-settings: "tnum";
+  }
+  .gauge-readout .v em { font-style: italic; }
+  .gauge-readout .sub { font-family: var(--mono); font-size: var(--t-xs); color: var(--text-muted); margin-top: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .gauge-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; width: 100%; }
+  .gauge-stat { background: var(--bg-elev); padding: 1rem; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .gauge-stat .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
+  .gauge-stat .v { font-family: var(--mono); font-size: var(--t-h4); color: var(--text-strong); font-feature-settings: "tnum"; font-weight: 540; }
+
+  /* Bar-meters panel */
+  .meters { display: flex; flex-direction: column; gap: 1rem; }
+  .meter { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: baseline; }
+  .meter .l { font-family: var(--sans); font-size: var(--t-small); font-weight: 540; color: var(--text-strong); }
+  .meter .v { font-family: var(--mono); font-size: var(--t-small); color: var(--text-strong); font-feature-settings: "tnum"; }
+  .meter .track { grid-column: 1 / -1; height: 8px; background: var(--bg-alt); border-radius: var(--r-pill); overflow: hidden; position: relative; }
+  .meter .fill { height: 100%; background: var(--chart-bar-accent); border-radius: var(--r-pill); transition: width var(--t-base); }
+  .meter .fill.peer { background: var(--peer-deep); }
+  .meter .fill.warn { background: var(--warn); }
+  .meter .fill.muted { background: var(--slate-8); }
+  .meter .sub { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.04em; }
+
+  /* Validator distribution */
+  .dist-bar { display: flex; height: 38px; border-radius: var(--r-pill); overflow: hidden; border: 1px solid var(--border); }
+  .dist-bar > div { height: 100%; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: var(--t-xs); color: var(--on-dark); font-feature-settings: "tnum"; }
+  .dist-bar .pending  { background: var(--slate-8);   color: var(--text-strong); }
+  .dist-bar .active   { background: var(--chart-bar-accent); }
+  .dist-bar .exiting  { background: var(--peer-deep); }
+  .dist-bar .exited   { background: var(--peer); }
+  .dist-bar .swept    { background: var(--slate-11); }
+
+  .dist-legend { display: flex; gap: 1.25rem 1.75rem; flex-wrap: wrap; font-family: var(--mono); font-size: var(--t-xs); color: var(--text-muted); letter-spacing: 0.04em; }
+  .dist-legend > span { display: inline-flex; align-items: center; gap: 8px; }
+  .dist-legend .sw { width: 14px; height: 10px; border-radius: 1px; }
+
+  /* Compact partial table */
+  .compact-table { width: 100%; font-family: var(--sans); font-size: var(--t-small); }
+  .compact-table thead th { font-family: var(--mono); font-size: var(--t-cap); font-weight: 530; letter-spacing: 0.12em; text-transform: uppercase; text-align: right; padding: 8px 8px 8px 0; color: var(--text-muted); border-bottom: 1px solid var(--border-strong); }
+  .compact-table thead th:first-child { padding-left: 0; text-align: left; }
+  .compact-table tbody td { padding: 8px 8px 8px 0; font-family: var(--mono); text-align: right; font-feature-settings: "tnum"; color: var(--text); border-bottom: 1px dashed var(--border); }
+  .compact-table tbody td:first-child { padding-left: 0; text-align: left; font-family: var(--sans); font-weight: 540; color: var(--text-strong); }
+  .compact-table tbody tr:last-child td { border-bottom: 0; }
+
+  .churn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: baseline; }
+  .churn-row .big {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 300;
+    font-stretch: 550%;
+    font-size: clamp(2rem, 3vw, 2.75rem);
+    line-height: 0.95;
+    color: var(--text-strong);
+    letter-spacing: -0.02em;
+    font-feature-settings: "tnum";
+  }
+  .churn-row .lab { font-family: var(--mono); font-size: var(--t-cap); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="experimental-banner">Prototype C · Split panels — Home, redesigned</div>
+
+<nav class="site-nav">
+  <div class="container row">
+    <a class="brand" href="../" aria-label="Bitwise"><img src="./assets/logos/bitwise-wordmark.svg" alt="Bitwise" /></a>
+    <ul class="primary-tabs" role="tablist">
+      <li><a class="active" data-tab-link="home" href="#home" role="tab">Home</a></li>
+      <li><a data-tab-link="validators" href="#validators" role="tab">Validators</a></li>
+      <li><a data-tab-link="consolidations" href="#consolidations" role="tab">Consolidations</a></li>
+      <li><a data-tab-link="methodology" href="#methodology" role="tab">Methodology</a></li>
+    </ul>
+    <div class="utilities">
+      <div class="window-switch" role="tablist" aria-label="Window">
+        <button>24h</button>
+        <button class="active">7d</button>
+        <button>30d</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<header class="context-bar">
+  <div class="container row">
+    <span class="live">Live</span>
+    <span class="pair"><span class="k">Slot</span> <span class="v">12,438,517</span></span>
+    <span class="pair"><span class="k">Epoch</span> <span class="v">388,703</span></span>
+    <span class="pair"><span class="k">Finalized</span> <span class="v">388,701</span></span>
+    <span class="pair"><span class="k">Validators</span> <span class="v">1,071,432</span></span>
+    <span class="pair" style="margin-left:auto;"><span class="k">Refreshed</span> <span class="v">3s ago</span></span>
+  </div>
+</header>
+
+<main>
+  <div class="tab-pane" data-tab-content="home" role="tabpanel">
+
+    <section class="dashboard">
+      <div class="container">
+
+        <header class="dash-head">
+          <div class="dash-title-block">
+            <span class="kicker">— State of the queue</span>
+            <h1 class="dash-title">Four panels, <em>one view</em>.</h1>
+          </div>
+        </header>
+
+        <div class="panel-grid">
+
+          <!-- ============ PANEL 1 · Exit-queue gauge ============ -->
+          <article class="dash-card">
+            <header class="dash-card-head">
+              <span class="kicker">Component · Exit queue</span>
+              <h2 class="dash-card-title">A <em>congested</em> queue.</h2>
+            </header>
+            <div class="gauge-wrap">
+              <svg class="gauge-svg" viewBox="0 0 240 140" aria-label="Exit queue severity gauge">
+                <!-- Background arc -->
+                <path d="M 20 120 A 100 100 0 0 1 220 120"
+                      fill="none" stroke="var(--slate-4)" stroke-width="16" stroke-linecap="round" />
+                <!-- Fill arc (about 68% — congested) -->
+                <path d="M 20 120 A 100 100 0 0 1 196 50"
+                      fill="none" stroke="var(--chart-bar-accent)" stroke-width="16" stroke-linecap="round" />
+                <!-- Tick marks -->
+                <g font-family="var(--mono)" font-size="10" fill="var(--text-muted)">
+                  <text x="14"  y="138" text-anchor="middle">Clear</text>
+                  <text x="120" y="20"  text-anchor="middle">High</text>
+                  <text x="226" y="138" text-anchor="middle">—</text>
+                </g>
+              </svg>
+              <div class="gauge-readout">
+                <div class="v"><em>24.8</em> d</div>
+                <div class="sub">Severity · Congested</div>
+              </div>
+              <div class="gauge-stats">
+                <div class="gauge-stat"><span class="k">Validators</span><span class="v">124,567</span></div>
+                <div class="gauge-stat"><span class="k">ETH</span><span class="v">3.99M</span></div>
+                <div class="gauge-stat"><span class="k">Drain</span><span class="v">3,840/d</span></div>
+              </div>
+            </div>
+            <p class="dash-card-foot">Severity = <em>queue_depth_epochs / 30</em>. Above <em>20</em> reads as congested.</p>
+          </article>
+
+          <!-- ============ PANEL 2 · Pending partial withdrawals ============ -->
+          <article class="dash-card">
+            <header class="dash-card-head">
+              <span class="kicker">Component · Pending partial withdrawals</span>
+              <h2 class="dash-card-title">Next out the <em>door</em>.</h2>
+              <p class="dash-card-deck"><em>3,412</em> requests · <em>75.1k</em> ETH waiting · sweep FIFO.</p>
+            </header>
+            <table class="compact-table">
+              <thead>
+                <tr>
+                  <th>Validator</th>
+                  <th>Amount</th>
+                  <th>Epoch</th>
+                  <th>ETA</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>#487,219</td><td>1.0231</td><td>388,612</td><td>~2h 14m</td></tr>
+                <tr><td>#902,114</td><td>12.4000</td><td>388,612</td><td>~2h 14m</td></tr>
+                <tr><td>#103,448</td><td>0.0042</td><td>388,613</td><td>~2h 21m</td></tr>
+                <tr><td>#671,002</td><td>31.9991</td><td>388,614</td><td>~2h 27m</td></tr>
+                <tr><td>#888,193</td><td>5.0120</td><td>388,615</td><td>~2h 34m</td></tr>
+                <tr><td>#212,447</td><td>0.0180</td><td>388,615</td><td>~2h 34m</td></tr>
+                <tr><td>#456,889</td><td>2.1050</td><td>388,616</td><td>~2h 41m</td></tr>
+                <tr><td>#001,047</td><td>0.5000</td><td>388,617</td><td>~2h 47m</td></tr>
+              </tbody>
+            </table>
+            <p class="dash-card-foot">First eight rows · sorted by epoch ascending.</p>
+          </article>
+
+          <!-- ============ PANEL 3 · Churn breakdown ============ -->
+          <article class="dash-card">
+            <header class="dash-card-head">
+              <span class="kicker">Component · Churn budget</span>
+              <h2 class="dash-card-title">Where the budget <em>goes</em>.</h2>
+            </header>
+            <div class="churn-row">
+              <div>
+                <div class="lab">ae_churn / epoch</div>
+                <div class="big">512 <span style="font-family: var(--mono); font-style: normal; font-stretch: normal; font-weight: 540; font-size: 0.45em; color: var(--text-muted); letter-spacing: 0.06em;">ETH</span></div>
+              </div>
+              <div>
+                <div class="lab">cons_churn / epoch</div>
+                <div class="big">256 <span style="font-family: var(--mono); font-style: normal; font-stretch: normal; font-weight: 540; font-size: 0.45em; color: var(--text-muted); letter-spacing: 0.06em;">ETH</span></div>
+              </div>
+            </div>
+            <div class="meters">
+              <div class="meter">
+                <span class="l">Exit consumption</span>
+                <span class="v">512 / 512 ETH</span>
+                <div class="track"><div class="fill" style="width: 100%;"></div></div>
+                <span class="sub">Saturated · 16 validators / epoch leaving via voluntary exit.</span>
+              </div>
+              <div class="meter">
+                <span class="l">Consolidation consumption</span>
+                <span class="v">32 / 256 ETH</span>
+                <div class="track"><div class="fill peer" style="width: 12.5%;"></div></div>
+                <span class="sub">1 consolidation / epoch · 12.5% of cons_churn budget.</span>
+              </div>
+              <div class="meter">
+                <span class="l">Deposit-queue drain</span>
+                <span class="v">8,924 pending</span>
+                <div class="track"><div class="fill muted" style="width: 68%;"></div></div>
+                <span class="sub">~54 d 20 h to drain · gated by deposit churn + 16/epoch count cap.</span>
+              </div>
+            </div>
+            <p class="dash-card-foot">Per spec · <code class="mono">ae_churn = min(MAX, max(MIN, total_active_balance / 65,536))</code>.</p>
+          </article>
+
+          <!-- ============ PANEL 4 · Validator-state distribution ============ -->
+          <article class="dash-card">
+            <header class="dash-card-head">
+              <span class="kicker">Component · Validator states</span>
+              <h2 class="dash-card-title">All <em>1.07M</em>, by state.</h2>
+              <p class="dash-card-deck">Distribution across the spec-defined lifecycle states. Active dominates by design.</p>
+            </header>
+            <div class="dist-bar" role="img" aria-label="Validator distribution by state">
+              <div class="pending"  style="width: 0.9%;"  title="Pending · 8,924">0.9%</div>
+              <div class="active"   style="width: 86.7%;" title="Active · 928,941">86.7% active</div>
+              <div class="exiting"  style="width: 0.8%;"  title="Exiting · 8,500">0.8%</div>
+              <div class="exited"   style="width: 1.6%;"  title="Exited · 17,143">1.6%</div>
+              <div class="swept"    style="width: 10.0%;" title="Swept · 107,143">10.0%</div>
+            </div>
+            <div class="dist-legend" style="margin-top: 0.75rem;">
+              <span><span class="sw" style="background: var(--slate-8);"></span>Pending · 8,924</span>
+              <span><span class="sw" style="background: var(--chart-bar-accent);"></span>Active · 928,941</span>
+              <span><span class="sw" style="background: var(--peer-deep);"></span>Exiting · 8,500</span>
+              <span><span class="sw" style="background: var(--peer);"></span>Exited · 17,143</span>
+              <span><span class="sw" style="background: var(--slate-11);"></span>Swept · 107,143</span>
+            </div>
+            <div class="gauge-stats" style="grid-template-columns: repeat(4, 1fr);">
+              <div class="gauge-stat"><span class="k">Active stake</span><span class="v">34.29M</span></div>
+              <div class="gauge-stat"><span class="k">Pending depo.</span><span class="v">8,924</span></div>
+              <div class="gauge-stat"><span class="k">In exit queue</span><span class="v">124,567</span></div>
+              <div class="gauge-stat"><span class="k">Pending part.</span><span class="v">3,412</span></div>
+            </div>
+            <p class="dash-card-foot">Live tally per beacon-state · refreshed every 12 s.</p>
+          </article>
+
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<nav class="proto-bar" aria-label="Switch prototype">
+  <a href="./">Index</a>
+  <a href="./a-dense.html">A · Dense</a>
+  <a href="./b-focus.html">B · Focus</a>
+  <a class="active" href="./c-panels.html">C · Panels</a>
+  <a href="./d-validator.html">D · Validator</a>
+</nav>
+
+</body>
+</html>

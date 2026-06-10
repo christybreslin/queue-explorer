@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Secrets / environment (use .env.example as the template)
+.env
+
+# Local history snapshot DB — rebuilt by `python -m backend.snapshot backfill`
+data/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# Non-app assets kept on disk but not part of the repo
+web/
+inspiration/
+.ai-style-guide copy/
+fetch_balances.py
+HANDOVER.md

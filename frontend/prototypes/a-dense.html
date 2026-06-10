@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>A · Dense grid — eth-explorer home prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./bitwise.css" />
+<style>
+  /* Layout-specific tweaks (Bitwise tokens come from bitwise.css) */
+  .kpi-grid-8 {
+    display: grid;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  @media (min-width: 720px)  { .kpi-grid-8 { grid-template-columns: repeat(4, 1fr); } }
+
+  .depth-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 200px;
+    padding: 6px 0 24px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .depth-bars .bar {
+    flex: 1;
+    background: var(--chart-bar);
+    border-radius: 1px 1px 0 0;
+    min-height: 1px;
+    transition: background var(--t-short);
+  }
+  .depth-bars .bar:hover { background: var(--chart-bar-accent); }
+  .depth-bars .bar.today { background: var(--chart-bar-accent); }
+  .depth-bars .x-axis {
+    position: absolute;
+    bottom: 0;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+    padding-top: 6px;
+  }
+
+  .pw-preview { margin-top: clamp(1.25rem, 2vw, 2rem); }
+  .pw-preview .pw-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.75rem; }
+  .pw-preview .pw-head .kicker { color: var(--text-muted); }
+  .pw-preview .pw-head .seeall { font-family: var(--mono); font-size: var(--t-xs); color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<div class="experimental-banner">Prototype A · Dense KPI grid — Home, redesigned</div>
+
+<nav class="site-nav">
+  <div class="container row">
+    <a class="brand" href="../" aria-label="Bitwise"><img src="./assets/logos/bitwise-wordmark.svg" alt="Bitwise" /></a>
+    <ul class="primary-tabs" role="tablist">
+      <li><a class="active" data-tab-link="home" href="#home" role="tab">Home</a></li>
+      <li><a data-tab-link="validators" href="#validators" role="tab">Validators</a></li>
+      <li><a data-tab-link="consolidations" href="#consolidations" role="tab">Consolidations</a></li>
+      <li><a data-tab-link="methodology" href="#methodology" role="tab">Methodology</a></li>
+    </ul>
+    <div class="utilities">
+      <div class="window-switch" role="tablist" aria-label="Window">
+        <button>24h</button>
+        <button>7d</button>
+        <button class="active">30d</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<header class="context-bar">
+  <div class="container row">
+    <span class="live">Live</span>
+    <span class="pair"><span class="k">Slot</span> <span class="v">12,438,517</span></span>
+    <span class="pair"><span class="k">Epoch</span> <span class="v">388,703</span></span>
+    <span class="pair"><span class="k">Finalized</span> <span class="v">388,701</span></span>
+    <span class="pair"><span class="k">Head</span> <span class="v">0x4a3f9c…b127</span></span>
+    <span class="pair"><span class="k">Peer</span> <span class="v">12.4 ms</span></span>
+    <span class="pair" style="margin-left:auto;"><span class="k">Refreshed</span> <span class="v">3s ago</span></span>
+  </div>
+</header>
+
+<main>
+  <div class="tab-pane" data-tab-content="home" role="tabpanel">
+
+    <section class="dashboard">
+      <div class="container">
+
+        <header class="dash-head">
+          <div class="dash-title-block">
+            <span class="kicker">— State of the queue</span>
+            <h1 class="dash-title">Where exits <em>stand</em>.</h1>
+          </div>
+          <p class="dash-card-deck" style="max-width:48ch;">
+            Eight headline KPIs, each tracked over the last <em>30 days</em>. Sparklines show the trajectory at a glance.
+          </p>
+        </header>
+
+        <div class="kpi-grid-8" aria-label="Headline KPIs">
+          <div class="dash-kpi">
+            <span class="label">Exit-queue wait</span>
+            <span class="value">24.8 d</span>
+            <span class="foot neg">▼ −0.4 d vs 24h</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path d="M0,17 L7,16 L14,14 L21,12 L28,10 L35,11 L42,8 L49,6 L56,7 L63,5 L70,5 L77,5 L84,5"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Validators in queue</span>
+            <span class="value">124,567</span>
+            <span class="foot">▲ +312 since last epoch</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path d="M0,20 L7,19 L14,17 L21,15 L28,13 L35,12 L42,11 L49,9 L56,8 L63,7 L70,6 L77,6 L84,5"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Total stake exiting</span>
+            <span class="value">3.99M</span>
+            <span class="foot neutral">ETH awaiting exit</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path class="muted" d="M0,18 L7,17 L14,16 L21,15 L28,13 L35,12 L42,11 L49,10 L56,9 L63,8 L70,7 L77,7 L84,6"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Active stake</span>
+            <span class="value">34.29M</span>
+            <span class="foot">▲ +0.02% ETH staked</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path d="M0,18 L7,17 L14,17 L21,16 L28,15 L35,14 L42,13 L49,12 L56,11 L63,10 L70,9 L77,9 L84,8"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Pending partial</span>
+            <span class="value">3,412</span>
+            <span class="foot neg">▼ −47 since last epoch</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path class="warn" d="M0,8 L7,9 L14,11 L21,12 L28,12 L35,13 L42,14 L49,13 L56,14 L63,15 L70,16 L77,16 L84,17"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Partial ETH waiting</span>
+            <span class="value">75,124</span>
+            <span class="foot neutral">→ flat</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path class="muted" d="M0,12 L7,11 L14,12 L21,13 L28,12 L35,12 L42,11 L49,12 L56,11 L63,12 L70,12 L77,12 L84,12"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Churn / day</span>
+            <span class="value">3,840</span>
+            <span class="foot neutral">16 / epoch · saturated</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path class="muted" d="M0,11 L7,11 L14,11 L21,11 L28,11 L35,11 L42,11 L49,11 L56,11 L63,11 L70,11 L77,11 L84,11"/></svg>
+          </div>
+          <div class="dash-kpi">
+            <span class="label">Pending deposits</span>
+            <span class="value">8,924</span>
+            <span class="foot">▲ +204 queued blocks</span>
+            <svg class="spark" viewBox="0 0 84 22" preserveAspectRatio="none"><path d="M0,15 L7,14 L14,13 L21,11 L28,12 L35,10 L42,9 L49,8 L56,7 L63,7 L70,6 L77,6 L84,6"/></svg>
+          </div>
+        </div>
+
+        <div class="dash-card" style="margin-top: clamp(1.5rem, 2.5vw, 2.5rem);">
+          <header class="dash-card-head">
+            <span class="kicker">Component · Depth chart</span>
+            <h2 class="dash-card-title">Exit queue over the next <em>24 days</em>.</h2>
+            <p class="dash-card-deck">Each bar is one calendar day. Churn is saturated at <em>16 validators/epoch</em>; the queue drains linearly.</p>
+          </header>
+          <div class="depth-bars" aria-label="Exit queue depth — 24-day horizon">
+            <div class="bar today" style="height: 96%;"></div>
+            <div class="bar" style="height: 92%;"></div>
+            <div class="bar" style="height: 88%;"></div>
+            <div class="bar" style="height: 84%;"></div>
+            <div class="bar" style="height: 80%;"></div>
+            <div class="bar" style="height: 79%;"></div>
+            <div class="bar" style="height: 76%;"></div>
+            <div class="bar" style="height: 74%;"></div>
+            <div class="bar" style="height: 72%;"></div>
+            <div class="bar" style="height: 70%;"></div>
+            <div class="bar" style="height: 66%;"></div>
+            <div class="bar" style="height: 62%;"></div>
+            <div class="bar" style="height: 58%;"></div>
+            <div class="bar" style="height: 54%;"></div>
+            <div class="bar" style="height: 50%;"></div>
+            <div class="bar" style="height: 46%;"></div>
+            <div class="bar" style="height: 42%;"></div>
+            <div class="bar" style="height: 38%;"></div>
+            <div class="bar" style="height: 32%;"></div>
+            <div class="bar" style="height: 28%;"></div>
+            <div class="bar" style="height: 22%;"></div>
+            <div class="bar" style="height: 16%;"></div>
+            <div class="bar" style="height: 10%;"></div>
+            <div class="bar" style="height: 4%;"></div>
+            <div class="x-axis">
+              <span>T+0</span><span>+6d</span><span>+12d</span><span>+18d</span><span>+24d</span>
+            </div>
+          </div>
+          <p class="dash-card-foot">Source · beacon node · projection assumes constant <code class="mono">ae_churn</code> &amp; no new entries.</p>
+
+          <div class="pw-preview">
+            <div class="pw-head">
+              <span class="kicker">Component · Pending partial withdrawals · preview</span>
+              <span class="seeall">3,412 total →</span>
+            </div>
+            <div class="full-table-host">
+              <table class="full-table">
+                <thead>
+                  <tr>
+                    <th>Validator</th>
+                    <th>Amount (ETH)</th>
+                    <th>Epoch requested</th>
+                    <th>ETA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>#487,219</td><td>1.0231</td><td>388,612</td><td>~2h 14m</td></tr>
+                  <tr><td>#902,114</td><td>12.4000</td><td>388,612</td><td>~2h 14m</td></tr>
+                  <tr><td>#103,448</td><td>0.0042</td><td>388,613</td><td>~2h 21m</td></tr>
+                  <tr><td>#671,002</td><td>31.9991</td><td>388,614</td><td>~2h 27m</td></tr>
+                  <tr><td>#888,193</td><td>5.0120</td><td>388,615</td><td>~2h 34m</td></tr>
+                  <tr><td>#212,447</td><td>0.0180</td><td>388,615</td><td>~2h 34m</td></tr>
+                  <tr><td>#456,889</td><td>2.1050</td><td>388,616</td><td>~2h 41m</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<nav class="proto-bar" aria-label="Switch prototype">
+  <a href="./">Index</a>
+  <a class="active" href="./a-dense.html">A · Dense</a>
+  <a href="./b-focus.html">B · Focus</a>
+  <a href="./c-panels.html">C · Panels</a>
+  <a href="./d-validator.html">D · Validator</a>
+</nav>
+
+</body>
+</html>

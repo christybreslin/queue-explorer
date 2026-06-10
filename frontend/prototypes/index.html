@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Home prototypes · eth-explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./bitwise.css" />
+<style>
+  main { padding: clamp(3rem, 6vw, 6rem) 0; }
+  .lede {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 300;
+    font-stretch: 550%;
+    font-size: var(--t-lede);
+    line-height: 1.4;
+    max-width: 56ch;
+    color: var(--text);
+    margin-top: clamp(1.5rem, 2vw, 2rem);
+  }
+  .options-grid {
+    display: grid;
+    gap: clamp(1.25rem, 2vw, 2rem);
+    grid-template-columns: 1fr;
+    margin-top: clamp(3rem, 5vw, 5rem);
+  }
+  @media (min-width: 900px)  { .options-grid { grid-template-columns: repeat(3, 1fr); } }
+  a.option {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card);
+    padding: clamp(1.5rem, 2vw, 2rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    color: inherit;
+    transition: border-color var(--t-short), transform var(--t-short);
+  }
+  a.option:hover { border-color: var(--text-strong); transform: translateY(-2px); }
+  a.option .tag {
+    font-family: var(--mono);
+    font-size: var(--t-cap);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--primary);
+  }
+  a.option h2 {
+    font-family: var(--serif);
+    font-weight: 300;
+    font-stretch: 550%;
+    font-size: clamp(1.5rem, 2vw, 1.875rem);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    color: var(--text-strong);
+  }
+  a.option h2 em { font-style: italic; }
+  a.option p {
+    font-family: var(--sans);
+    font-size: var(--t-small);
+    line-height: 1.55;
+    color: var(--text);
+  }
+  a.option ul {
+    font-family: var(--mono);
+    font-size: var(--t-xs);
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 0;
+    margin-top: auto;
+  }
+  a.option ul li::before {
+    content: "·  ";
+    color: var(--primary);
+  }
+  a.option .open {
+    font-family: var(--mono);
+    font-size: var(--t-cap);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-strong);
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+
+  .note {
+    margin-top: clamp(3rem, 5vw, 5rem);
+    padding: clamp(1.5rem, 2vw, 2rem);
+    background: var(--bg-alt);
+    border-radius: var(--r-md);
+    font-family: var(--sans);
+    font-size: var(--t-small);
+    color: var(--text);
+    max-width: 80ch;
+  }
+  .note code { font-family: var(--mono); font-size: 12px; background: var(--bg); padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="container row">
+    <a class="brand" href="../" aria-label="Bitwise"><img src="./assets/logos/bitwise-wordmark.svg" alt="Bitwise" /></a>
+    <span style="font-family: var(--mono); font-size: var(--t-cap); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted);">— Home redesign · prototypes</span>
+    <div></div>
+  </div>
+</nav>
+
+<main>
+  <div class="container">
+    <span class="eyebrow">— Design exploration</span>
+    <h1 style="font-family: var(--serif); font-weight: 300; font-stretch: 550%; font-size: clamp(2.5rem, 5vw, 4.5rem); line-height: 0.95; letter-spacing: -0.02em; color: var(--text-strong); margin-top: 1rem;">Four takes — three homes, one <em>validator view</em>.</h1>
+    <p class="lede">
+      A → C are home-page candidates focused on exits and entry. D is a separate validator-info surface — what you get from beacon state with no historic DB.
+    </p>
+
+    <div class="options-grid">
+      <a class="option" href="./a-dense.html">
+        <span class="tag">A · Home · Dense</span>
+        <h2>Eight KPIs, eight <em>sparklines</em>.</h2>
+        <p>Headline numbers in a 4×2 tile grid, each with a 30-day sparkline. A depth chart below; a partial-withdrawal preview rounds it out. For analysts who scan numbers first.</p>
+        <ul>
+          <li>4×2 KPI grid · 8 metrics</li>
+          <li>Inline SVG sparklines</li>
+          <li>Depth chart (to be revisited)</li>
+          <li>Partial-wd preview</li>
+        </ul>
+        <span class="open">Open prototype →</span>
+      </a>
+
+      <a class="option" href="./b-focus.html">
+        <span class="tag">B · Home · Focus</span>
+        <h2>One <em>big</em> chart, one read.</h2>
+        <p>Exit-queue depth chart anchors the page. A dark 5-cell stat band sits below. Partial-withdrawal table and predictor share a split row. For executives and one-glance reads.</p>
+        <ul>
+          <li>Anchor projection chart</li>
+          <li>Dark 5-cell stat-row</li>
+          <li>Table + predictor split</li>
+        </ul>
+        <span class="open">Open prototype →</span>
+      </a>
+
+      <a class="option" href="./c-panels.html">
+        <span class="tag">C · Home · Panels</span>
+        <h2>Four panels, <em>one view</em>.</h2>
+        <p>2×2 dash-cards: gauge · table · churn meters · validator-state distribution. Each panel is independently legible; the page fits on one screen at 1440 wide.</p>
+        <ul>
+          <li>Severity gauge</li>
+          <li>Compact partial-wd table</li>
+          <li>Churn-budget meters</li>
+          <li>Validator-state strip</li>
+        </ul>
+        <span class="open">Open prototype →</span>
+      </a>
+
+      <a class="option" href="./d-validator.html">
+        <span class="tag">D · Validator info</span>
+        <h2>A validator, <em>resolved</em>.</h2>
+        <p>Separate from the home tab. Lookup by index or pubkey, then resolve everything beacon state knows — status, balance, queue position, lifecycle timeline, plus any pending deposits, partial withdrawals, or consolidations.</p>
+        <ul>
+          <li>Lookup field + example chips</li>
+          <li>Status / creds / balance header</li>
+          <li>9-state lifecycle timeline</li>
+          <li>Side panels for queues</li>
+        </ul>
+        <span class="open">Open prototype →</span>
+      </a>
+    </div>
+
+    <div class="note">
+      <strong>Mock data ·</strong> each prototype uses a representative mid-2026 snapshot:
+      <code>1,071,432</code> active validators · <code>34.29M</code> ETH staked ·
+      <code>124,567</code> in the exit queue (<code>~24.8 d</code> wait) ·
+      <code>3,412</code> pending partial withdrawals (<code>~75.1k</code> ETH) ·
+      <code>16</code>/epoch churn.
+      Pick one to develop; we lift the winning layout into the real <code>../index.html</code>.
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>B · Focus — eth-explorer home prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="./bitwise.css" />
+<style>
+  /* Big-chart focus layout */
+  .focus-host {
+    position: relative;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-card);
+    padding: clamp(1.75rem, 2.5vw, 2.5rem);
+    overflow: hidden;
+  }
+  .focus-host .head {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    margin-bottom: clamp(1.25rem, 2vw, 2rem);
+  }
+  @media (min-width: 720px) {
+    .focus-host .head { grid-template-columns: 1fr auto; align-items: end; gap: 2rem; }
+  }
+  .focus-host .head .kicker { color: var(--primary); }
+  .focus-host .head .ttl {
+    font-family: var(--serif);
+    font-weight: 300;
+    font-stretch: 550%;
+    font-size: clamp(2rem, 3.5vw, 3.25rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--text-strong);
+    margin-top: 0.4rem;
+  }
+  .focus-host .head .ttl em { font-style: italic; }
+  .focus-host .head .right { display: flex; gap: 1.5rem; font-family: var(--mono); font-size: var(--t-xs); }
+  .focus-host .head .right .anchor { display: flex; flex-direction: column; gap: 2px; }
+  .focus-host .head .right .anchor .k { color: var(--text-muted); letter-spacing: 0.14em; text-transform: uppercase; font-size: 9.5px; }
+  .focus-host .head .right .anchor .v { color: var(--text-strong); font-size: var(--t-small); font-feature-settings: "tnum"; }
+  .focus-host .head .right .anchor .v em { font-style: italic; font-family: var(--serif); font-weight: 300; font-stretch: 550%; font-size: 1.5rem; color: var(--brand-6); }
+
+  .focus-chart { position: relative; }
+  .focus-chart svg { width: 100%; height: clamp(280px, 38vw, 440px); display: block; overflow: visible; }
+  .focus-chart .x-axis {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+    padding-top: 8px;
+  }
+
+  .focus-host .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem 2rem;
+    font-family: var(--mono);
+    font-size: var(--t-xs);
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    align-items: center;
+    margin-top: clamp(1rem, 2vw, 1.5rem);
+  }
+  .focus-host .chart-legend .swatch {
+    display: inline-block;
+    width: 18px; height: 10px;
+    margin-right: 8px;
+    vertical-align: middle;
+    border-radius: 1px;
+  }
+  .focus-host .chart-legend .swatch.bitwise { background: var(--chart-bar-accent); }
+  .focus-host .chart-legend .swatch.peer    { background: var(--chart-bar); }
+  .focus-host .chart-legend .swatch.median  { border-bottom: 1.5px dashed var(--text-faint); height: 0; margin-top: 4px; }
+
+  /* Support strip below focus card */
+  .support-row {
+    display: grid;
+    gap: clamp(1rem, 1.5vw, 1.5rem);
+    margin-top: clamp(1.5rem, 2.5vw, 2.5rem);
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 1100px) {
+    .support-row { grid-template-columns: minmax(0, 1fr) minmax(360px, 0.7fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="experimental-banner">Prototype B · Focus chart — Home, redesigned</div>
+
+<nav class="site-nav">
+  <div class="container row">
+    <a class="brand" href="../" aria-label="Bitwise"><img src="./assets/logos/bitwise-wordmark.svg" alt="Bitwise" /></a>
+    <ul class="primary-tabs" role="tablist">
+      <li><a class="active" data-tab-link="home" href="#home" role="tab">Home</a></li>
+      <li><a data-tab-link="validators" href="#validators" role="tab">Validators</a></li>
+      <li><a data-tab-link="consolidations" href="#consolidations" role="tab">Consolidations</a></li>
+      <li><a data-tab-link="methodology" href="#methodology" role="tab">Methodology</a></li>
+    </ul>
+    <div class="utilities">
+      <div class="window-switch" role="tablist" aria-label="Window">
+        <button>24h</button>
+        <button class="active">7d</button>
+        <button>30d</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<header class="context-bar">
+  <div class="container row">
+    <span class="live">Live</span>
+    <span class="pair"><span class="k">Slot</span> <span class="v">12,438,517</span></span>
+    <span class="pair"><span class="k">Epoch</span> <span class="v">388,703</span></span>
+    <span class="pair"><span class="k">Finalized</span> <span class="v">388,701</span></span>
+    <span class="pair"><span class="k">Validators</span> <span class="v">1,071,432</span></span>
+    <span class="pair" style="margin-left:auto;"><span class="k">Refreshed</span> <span class="v">3s ago</span></span>
+  </div>
+</header>
+
+<main>
+  <div class="tab-pane" data-tab-content="home" role="tabpanel">
+
+    <section class="dashboard">
+      <div class="container">
+
+        <header class="dash-head">
+          <div class="dash-title-block">
+            <span class="kicker">— Tracking the queue</span>
+            <h1 class="dash-title">Exits, in <em>real time</em>.</h1>
+          </div>
+        </header>
+
+        <article class="focus-host">
+          <header class="head">
+            <div>
+              <span class="kicker">Component · Exit queue · depth over time</span>
+              <h2 class="ttl">The shape of the <em>backlog</em>.</h2>
+            </div>
+            <div class="right">
+              <div class="anchor">
+                <span class="k">Current wait</span>
+                <span class="v"><em>24.8</em> days</span>
+              </div>
+              <div class="anchor">
+                <span class="k">Validators in queue</span>
+                <span class="v"><em>124.6k</em></span>
+              </div>
+              <div class="anchor">
+                <span class="k">Drain rate</span>
+                <span class="v"><em>3,840</em> / day</span>
+              </div>
+            </div>
+          </header>
+
+          <div class="focus-chart">
+            <svg viewBox="0 0 800 360" preserveAspectRatio="none" aria-label="Exit queue depth over time">
+              <defs>
+                <linearGradient id="bw-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"  stop-color="hsla(146, 88%, 22%, 0.18)" />
+                  <stop offset="100%" stop-color="hsla(146, 88%, 22%, 0.00)" />
+                </linearGradient>
+              </defs>
+              <!-- Y-axis grid -->
+              <line x1="0"   y1="60"  x2="800" y2="60"  stroke="var(--chart-grid)" stroke-width="1" />
+              <line x1="0"   y1="135" x2="800" y2="135" stroke="var(--chart-grid)" stroke-width="1" />
+              <line x1="0"   y1="210" x2="800" y2="210" stroke="var(--chart-grid)" stroke-width="1" />
+              <line x1="0"   y1="285" x2="800" y2="285" stroke="var(--chart-grid)" stroke-width="1" />
+              <line x1="0"   y1="320" x2="800" y2="320" stroke="var(--chart-axis)" stroke-width="1.2" />
+
+              <!-- Y-axis labels -->
+              <text x="6" y="60"  font-family="var(--mono)" font-size="10" fill="var(--text-muted)">150k</text>
+              <text x="6" y="135" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">100k</text>
+              <text x="6" y="210" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">50k</text>
+              <text x="6" y="285" font-family="var(--mono)" font-size="10" fill="var(--text-muted)">25k</text>
+
+              <!-- Historical area (peer / population baseline) - dashed line for median -->
+              <path d="M0,260 L80,255 L160,250 L240,245 L320,230 L400,210 L480,180 L560,150 L640,120 L720,100 L800,80"
+                    fill="none" stroke="var(--text-faint)" stroke-width="1.3" stroke-dasharray="4 3" />
+
+              <!-- Main projection: filled area under brand line -->
+              <path d="M0,30 L40,35 L80,42 L120,52 L160,66 L200,84 L240,108 L280,138 L320,170 L360,204 L400,234 L440,260 L480,280 L520,295 L560,306 L600,313 L640,318 L680,320 L720,320 L760,320 L800,320 L800,320 L0,320 Z"
+                    fill="url(#bw-fill)" />
+
+              <!-- Brand projection line -->
+              <path d="M0,30 L40,35 L80,42 L120,52 L160,66 L200,84 L240,108 L280,138 L320,170 L360,204 L400,234 L440,260 L480,280 L520,295 L560,306 L600,313 L640,318 L680,320 L720,320 L760,320 L800,320"
+                    fill="none" stroke="var(--chart-bar-accent)" stroke-width="2.2" />
+
+              <!-- T-0 marker -->
+              <line x1="0" y1="0" x2="0" y2="320" stroke="var(--text-strong)" stroke-width="1.2" stroke-dasharray="2 2" />
+              <circle cx="0" cy="30" r="5" fill="var(--chart-bar-accent)" stroke="var(--bg-elev)" stroke-width="2" />
+              <text x="10" y="22" font-family="var(--mono)" font-size="11" font-weight="600" fill="var(--text-strong)">124,567 in queue · today</text>
+
+              <!-- 24-day marker -->
+              <circle cx="800" cy="320" r="5" fill="var(--bg-elev)" stroke="var(--chart-bar-accent)" stroke-width="2" />
+            </svg>
+
+            <div class="x-axis">
+              <span>T+0</span>
+              <span>+3d</span>
+              <span>+6d</span>
+              <span>+9d</span>
+              <span>+12d</span>
+              <span>+15d</span>
+              <span>+18d</span>
+              <span>+21d</span>
+              <span>+24d</span>
+            </div>
+          </div>
+
+          <div class="chart-legend" aria-label="Legend">
+            <span><span class="swatch bitwise"></span>Projected queue depth · churn-saturated</span>
+            <span><span class="swatch median"></span>Trailing 30-day median</span>
+          </div>
+        </article>
+
+        <div class="frame bg-dark" style="margin-top: clamp(2rem, 3vw, 3rem); padding-block: 0; border-radius: var(--r-md); border: 0;">
+          <div style="padding: clamp(1.5rem, 2.5vw, 2.5rem);">
+            <span class="kicker" style="color: var(--brand-3);">— At a glance</span>
+            <h3 class="section-title" style="font-size: clamp(1.5rem, 2.4vw, 2.25rem); margin-top: 0.5rem;">Five numbers, <em>one read</em>.</h3>
+          </div>
+          <div class="stat-row cols-5">
+            <div class="stat-cell">
+              <span class="label">Exit-queue wait</span>
+              <span class="v">24.8 d</span>
+              <span class="foot">▼ −0.4 d vs 24h</span>
+            </div>
+            <div class="stat-cell">
+              <span class="label">Validators in queue</span>
+              <span class="v">124.6k</span>
+              <span class="foot">▲ +312 last epoch</span>
+            </div>
+            <div class="stat-cell">
+              <span class="label">Active stake</span>
+              <span class="v">34.29M</span>
+              <span class="foot">ETH · ▲ +0.02%</span>
+            </div>
+            <div class="stat-cell">
+              <span class="label">Churn / epoch</span>
+              <span class="v">16</span>
+              <span class="foot">3,840 / day · saturated</span>
+            </div>
+            <div class="stat-cell">
+              <span class="label">Pending partial</span>
+              <span class="v">3,412</span>
+              <span class="foot">75.1k ETH waiting</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="support-row">
+          <div class="dash-card">
+            <header class="dash-card-head">
+              <span class="kicker">Component · Pending partial withdrawals</span>
+              <h3 class="dash-card-title">Next out the <em>door</em>.</h3>
+              <p class="dash-card-deck">First seven of <em>3,412</em> waiting partials. Sweep is FIFO; rate-limited by sweep, not churn.</p>
+            </header>
+            <div class="full-table-host" style="border: 0; box-shadow: none;">
+              <table class="full-table">
+                <thead>
+                  <tr>
+                    <th>Validator</th>
+                    <th>Amount (ETH)</th>
+                    <th>Epoch req.</th>
+                    <th>ETA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>#487,219</td><td>1.0231</td><td>388,612</td><td>~2h 14m</td></tr>
+                  <tr><td>#902,114</td><td>12.4000</td><td>388,612</td><td>~2h 14m</td></tr>
+                  <tr><td>#103,448</td><td>0.0042</td><td>388,613</td><td>~2h 21m</td></tr>
+                  <tr><td>#671,002</td><td>31.9991</td><td>388,614</td><td>~2h 27m</td></tr>
+                  <tr><td>#888,193</td><td>5.0120</td><td>388,615</td><td>~2h 34m</td></tr>
+                  <tr><td>#212,447</td><td>0.0180</td><td>388,615</td><td>~2h 34m</td></tr>
+                  <tr><td>#456,889</td><td>2.1050</td><td>388,616</td><td>~2h 41m</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="dash-card">
+            <header class="dash-card-head">
+              <span class="kicker">Component · Predictor</span>
+              <h3 class="dash-card-title">Predict a <em>withdrawal</em>.</h3>
+              <p class="dash-card-deck">Estimated time from <em>request</em> to <em>withdrawable</em>, given current churn and queue depth.</p>
+            </header>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <div class="window-switch" role="tablist" aria-label="Mode">
+                <button class="active">Full exit</button>
+                <button>Partial</button>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 0.5rem;">
+              <input type="number" placeholder="32"
+                style="flex: 1; min-width: 120px; height: 38px; padding: 0 14px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--r-pill); color: var(--text-strong); font-family: var(--sans); font-size: var(--t-small);" />
+              <span class="mono" style="color: var(--text-muted); font-size: var(--t-xs);">ETH</span>
+              <button class="btn-mini" style="background: var(--text-strong); color: var(--bg); border: 0; padding: 9px 18px; font-family: var(--sans); font-weight: 540; font-size: var(--t-small); letter-spacing: 0; text-transform: none;">Predict</button>
+            </div>
+            <div style="background: var(--bg-alt); border-radius: var(--r-md); padding: 1rem; margin-top: 0.5rem;">
+              <div class="kicker" style="color: var(--brand-6); margin-bottom: 6px;">Estimated wait</div>
+              <div style="font-family: var(--serif); font-style: italic; font-weight: 300; font-stretch: 550%; font-size: clamp(2rem, 3vw, 2.75rem); line-height: 0.95; color: var(--text-strong); letter-spacing: -0.02em;">24 d 19 h 41 m</div>
+              <div class="mono" style="font-size: var(--t-xs); color: var(--text-muted); margin-top: 6px;">Lands in epoch 394,328 · withdrawable 256 epochs later</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<nav class="proto-bar" aria-label="Switch prototype">
+  <a href="./">Index</a>
+  <a href="./a-dense.html">A · Dense</a>
+  <a class="active" href="./b-focus.html">B · Focus</a>
+  <a href="./c-panels.html">C · Panels</a>
+  <a href="./d-validator.html">D · Validator</a>
+</nav>
+
+</body>
+</html>
