@@ -3,7 +3,12 @@
    Fetches the local FastAPI and renders the dashboard.
    ============================================================ */
 
-const API = ""; // same-origin (mounted by FastAPI)
+// API base. Defaults to same-origin (frontend served by FastAPI). To edit the
+// frontend locally against a remote backend, pass ?api=http://host:8000 in the
+// URL (or set window.API_BASE before this script loads).
+const API = new URLSearchParams(location.search).get("api")
+          || window.API_BASE
+          || ""; // same-origin (mounted by FastAPI)
 const TABS = ["home", "validators", "consolidations", "methodology", "history"];
 const FAR_FUTURE = "18446744073709551615";
 const EPOCH_SECONDS = 384; // 32 slots × 12s

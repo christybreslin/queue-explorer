@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -55,6 +56,16 @@ class NoStaleStaticMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(NoStaleStaticMiddleware)
+
+# Allow a locally-served frontend to read this backend cross-origin (dev: edit
+# the frontend on your laptop while pulling data from the box). Open for dev;
+# lock allow_origins to your real frontend origin if the box is ever public.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/network")
