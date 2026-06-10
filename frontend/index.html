@@ -245,7 +245,7 @@
                                 <span class="kicker" id="pw-kicker">— Pending partial withdrawals</span>
                                 <span class="kicker home-section-meta" id="pw-deck">—</span>
                             </div>
-                            <div class="full-table-host" id="pw-host" style="max-height: 540px; overflow: auto">
+                            <div class="full-table-host pw-scroll" id="pw-host">
                                 <table class="full-table" id="pw-table">
                                     <thead>
                                         <tr>
@@ -525,18 +525,21 @@
             >
                 <section class="dashboard">
                     <div class="container">
-                        <header class="dash-head history-head">
-                            <div class="dash-title-block">
-                                <span class="kicker">Series · Since Pectra</span>
-                                <h1 class="dash-title">
-                                    The network, <em>day by day</em>.
-                                </h1>
-                                <p class="dash-card-deck">
-                                    Daily snapshots of every headline figure,
-                                    reconstructed from finalized beacon state
-                                    back to the Pectra fork.
-                                </p>
-                            </div>
+                        <!-- Present-tense topline · same cell vocabulary as home -->
+                        <div
+                            class="home-network-stats history-topline"
+                            id="history-topline"
+                        >
+                            <!-- populated by JS -->
+                        </div>
+
+                        <div
+                            id="history-error"
+                            class="predictor-error"
+                            hidden
+                        ></div>
+
+                        <div class="history-toolbar">
                             <div
                                 class="history-range"
                                 id="history-range"
@@ -550,13 +553,7 @@
                                     >Since Pectra</a
                                 >
                             </div>
-                        </header>
-
-                        <div
-                            id="history-error"
-                            class="predictor-error"
-                            hidden
-                        ></div>
+                        </div>
 
                         <div class="history-grid" id="history-charts">
                             <!-- populated by JS -->

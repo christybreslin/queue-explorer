@@ -328,10 +328,6 @@ function queueFillPct(waitHours) {
   // Congested — cap at 30 days (~720 h) for full arc.
   return Math.min(1, 0.75 + ((waitHours - 240) / 480) * 0.25);
 }
-function tierBarCls(sev) {
-  return sev === "congested" ? "warn" : sev === "moderate" ? "peer" : "";
-}
-
 /* ---------- Queue gauge renderer ---------- */
 function gaugeHTML({ title, value, severity, footLeft, footRight, pct }) {
   const RADIUS = 100;
@@ -381,7 +377,7 @@ function renderExitQueueStats() {
     <span class="gauge-meta">${fmtInt(eq.total_exiting_validators)} validator${eq.total_exiting_validators === 1 ? "" : "s"} · ${fmtInt(depth)} epoch${depth === 1 ? "" : "s"} deep</span>
   `;
 
-  renderExitKpis(severity, pct);
+  renderExitKpis(severity);
 }
 
 function renderEntryQueueStats() {
@@ -396,7 +392,7 @@ function renderEntryQueueStats() {
   const pct = queueFillPct(waitH);
 
   root.innerHTML = gaugeHTML({
-    title: "Entry queue · drain",
+    title: "Entry queue · wait",
     value: fmtHours(waitH),
     severity,
     footLeft: "CLEAR",
@@ -406,7 +402,7 @@ function renderEntryQueueStats() {
     <span class="gauge-meta">${fmtInt(enq.finalized_count)} deposit${enq.finalized_count === 1 ? "" : "s"} · ${fmtEth(enq.finalized_eth, 0)} ETH</span>
   `;
 
-  renderEntryKpis(severity, pct);
+  renderEntryKpis(severity);
 }
 
 /* ---------- Stats cards under each gauge ---------- */
@@ -420,48 +416,44 @@ function _loadingCells(n) {
   `).join("");
 }
 
-function renderEntryKpis(severity, fillPct) {
+function renderEntryKpis(severity) {
   const root = $("#entry-stats");
   if (!root) return;
   const en = state.entryQueue;
   if (!en) { root.innerHTML = _loadingCells(2); return; }
-  const bar = tierBarCls(severity);
-  const pct = Math.round((fillPct ?? 0) * 100);
   root.innerHTML = `
     <div class="cell">
       <span class="k">Pending deposits</span>
       <span class="v">${fmtInt(en.finalized_count)}</span>
       <span class="sub"><span class="${severity === "clear" ? "pos" : severity === "congested" ? "neg" : ""}">${escapeHtml(severity)}</span></span>
-      <span class="bar"><i class="${bar}" style="width: ${pct}%;"></i></span>
+      ${_sparkHTML(s => s.entry_finalized_count, "brand")}
     </div>
     <div class="cell">
       <span class="k">Stake entering</span>
       <span class="v">${fmtEth(en.finalized_eth, 0)}</span>
       <span class="sub">ETH awaiting activation</span>
-      <span class="bar"><i class="${bar}" style="width: ${pct}%;"></i></span>
+      ${_sparkHTML(s => s.entry_finalized_eth, "brand")}
     </div>
   `;
 }
 
-function renderExitKpis(severity, fillPct) {
+function renderExitKpis(severity) {
   const root = $("#exit-stats");
   if (!root) return;
   const eq = state.exitQueue;
   if (!eq) { root.innerHTML = _loadingCells(2); return; }
-  const bar = tierBarCls(severity);
-  const pct = Math.round((fillPct ?? 0) * 100);
   root.innerHTML = `
     <div class="cell">
       <span class="k">Validators exiting</span>
       <span class="v">${fmtInt(eq.total_exiting_validators)}</span>
       <span class="sub"><span class="${severity === "clear" ? "pos" : severity === "congested" ? "neg" : ""}">${escapeHtml(severity)}</span></span>
-      <span class="bar"><i class="${bar}" style="width: ${pct}%;"></i></span>
+      ${_sparkHTML(s => s.exit_count, "brand")}
     </div>
     <div class="cell">
       <span class="k">Stake exiting</span>
       <span class="v">${fmtEth(eq.total_exiting_balance_eth, 0)}</span>
       <span class="sub">ETH awaiting exit</span>
-      <span class="bar"><i class="${bar}" style="width: ${pct}%;"></i></span>
+      ${_sparkHTML(s => s.exit_balance_gwei / GWEI, "brand")}
     </div>
   `;
 }
@@ -503,6 +495,7 @@ function renderPendingWithdrawals() {
   if (deck) deck.textContent = `${fmtInt(data.count)} entries · ${fmtEth(data.total_amount_eth, 0)} ETH`;
 
   const sorted = sortedWithdrawals();
+  _updatePwSortArrows();
   tbody.innerHTML = sorted.map(w => {
     const etaIso = w.withdrawable_time;
     const ageHours = etaIso ? (new Date(etaIso).getTime() - Date.now()) / 3600000 : null;
@@ -510,7 +503,7 @@ function renderPendingWithdrawals() {
     return `
       <tr>
         <td><a href="https://beaconcha.in/validator/${w.validator_index}" target="_blank" rel="noopener noreferrer">#${escapeHtml(w.validator_index)}</a></td>
-        <td>${fmtEth(w.amount_eth, 4)} ETH</td>
+        <td>${_fmtPwAmount(w.amount_eth)} ETH</td>
         <td style="color: var(--text-muted);">${fmtInt(w.withdrawable_epoch)}</td>
         <td>
           <span class="${tone}">${timeFromNow(etaIso)}</span>
@@ -519,6 +512,25 @@ function renderPendingWithdrawals() {
       </tr>
     `;
   }).join("");
+}
+
+// Amounts span 482 ETH down to dust — fmtEth's 2-minimum-decimals turns
+// sub-0.0001 values into a misleading "0.00".
+function _fmtPwAmount(eth) {
+  if (eth == null) return "—";
+  if (eth === 0) return "0";
+  if (eth < 0.0001) return "<0.0001";
+  return fmtEth(eth, 4);
+}
+
+// Sort indicator on the active column (the .arrow style existed unwired).
+function _updatePwSortArrows() {
+  $$("#pw-table thead th").forEach(th => {
+    if (!th.dataset.label) th.dataset.label = th.textContent.trim();
+    const active = th.dataset.sort === state.pwSort.key;
+    th.innerHTML = escapeHtml(th.dataset.label) +
+      (active ? `<span class="arrow">${state.pwSort.dir === "asc" ? "↑" : "↓"}</span>` : "");
+  });
 }
 
 /* ---------- Predictor ---------- */
@@ -1994,6 +2006,7 @@ function renderAll() {
   renderEntryQueueStats();
   renderExitQueueStats();
   renderPendingWithdrawals();
+  renderHistoryTopline();
 }
 
 /* ---------- Network stats card (4 cells above the queues) ---------- */
@@ -2003,14 +2016,9 @@ function renderNetworkStats() {
   const n = state.network;
   if (!n) { root.innerHTML = _loadingCells(4); return; }
 
-  // Helper denominators — rough magnitudes for the mini bars
-  const valsPct  = Math.min(100, Math.round((n.active_validators / 1_500_000) * 100));
-  const stakePct = Math.min(100, Math.round((n.total_stake_eth / 40_000_000) * 100));
   const compPct  = Math.min(100, Math.round((n.compounding_share || 0) * 100));
   const pcCount  = n.pending_consolidations ?? 0;
   const pcTargets = n.pending_consolidation_targets ?? 0;
-  // Bar scales 0 → "lots happening" at 256 consolidations (cons_churn cap implication).
-  const pcPct = Math.min(100, Math.round((pcCount / 256) * 100));
   const pcSub = pcCount === 0
     ? "queue empty"
     : `${fmtInt(pcTargets)} target validator${pcTargets === 1 ? "" : "s"}`;
@@ -2025,25 +2033,25 @@ function renderNetworkStats() {
       <span class="k">Active validators</span>
       <span class="v">${fmtInt(n.active_validators)}</span>
       <span class="sub">active_ongoing + exiting + slashed</span>
-      <span class="bar"><i style="width: ${valsPct}%;"></i></span>
+      ${_sparkHTML(s => s.active_validators, "brand")}
     </div>
     <div class="cell">
       <span class="k">Total stake</span>
       <span class="v">${stakeM}</span>
       <span class="sub">ETH staked network-wide</span>
-      <span class="bar"><i style="width: ${stakePct}%;"></i></span>
+      ${_sparkHTML(s => s.total_stake_gwei / GWEI, "brand")}
     </div>
     <div class="cell">
       <span class="k">Pending consolidations</span>
       <span class="v">${fmtInt(pcCount)}</span>
       <span class="sub"><span class="${pcSubCls}">${escapeHtml(pcSub)}</span></span>
-      <span class="bar"><i class="peer" style="width: ${pcPct}%;"></i></span>
+      ${_sparkHTML(s => s.pending_consolidations, "peer")}
     </div>
     <div class="cell">
       <span class="k">Compounding share</span>
       <span class="v">${compPct}%</span>
       <span class="sub">${fmtInt(n.compounding_count)} on 0x02 creds</span>
-      <span class="bar"><i class="peer" style="width: ${compPct}%;"></i></span>
+      ${_sparkHTML(s => (s.compounding_share || 0) * 100, "peer")}
     </div>
   `;
 }
@@ -2054,10 +2062,24 @@ function renderNetworkStats() {
 // from a snapshot row; `fmt` renders the latest-value hero. Accent follows the
 // locked chip convention: peer-purple for compounding/consolidation, brand-green
 // for everything else.
+// Accent vocabulary (locked with the user): exit-side red, entry-side green,
+// compounding/consolidation purple, neutral network stats blue.
+const ACCENT_COLORS = {
+  brand: "var(--primary)",   // home sparklines stay brand-green/peer only
+  entry: "var(--primary)",
+  exit:  "var(--warn)",
+  peer:  "var(--peer)",
+  stat:  "var(--stat)",
+};
+
 const HISTORY_CHARTS = [
-  { title: "Active validators", accent: "brand",
+  { title: "Entry queue wait", accent: "entry",
+    val: s => s.entry_drain_days, fmt: v => fmtDaysHours(v * 86400) },
+  { title: "Exit queue wait", accent: "exit",
+    val: s => s.exit_wait_hours, fmt: v => fmtHours(v) },
+  { title: "Active validators", accent: "stat",
     val: s => s.active_validators, fmt: v => fmtInt(Math.round(v)) },
-  { title: "Total stake", accent: "brand",
+  { title: "Total stake", accent: "stat",
     val: s => s.total_stake_gwei / GWEI, fmt: v => _fmtEthCompact(v) + " ETH" },
   { title: "Compounding share", accent: "peer",
     val: s => (s.compounding_share || 0) * 100, fmt: v => v.toFixed(2) + "%" },
@@ -2065,17 +2087,11 @@ const HISTORY_CHARTS = [
     val: s => s.compounding_count, fmt: v => fmtInt(Math.round(v)) },
   { title: "Pending consolidations", accent: "peer",
     val: s => s.pending_consolidations, fmt: v => fmtInt(Math.round(v)) },
-  { title: "Churn limit", accent: "brand",
-    val: s => s.churn_limit_gwei / GWEI, fmt: v => fmtInt(Math.round(v)) + " ETH/epoch" },
-  { title: "Exit queue wait", accent: "brand",
-    val: s => s.exit_wait_hours, fmt: v => fmtHours(v) },
-  { title: "Exiting validators", accent: "brand",
+  { title: "Exiting validators", accent: "exit",
     val: s => s.exit_count, fmt: v => fmtInt(Math.round(v)) },
-  { title: "Entry queue drain", accent: "brand",
-    val: s => s.entry_drain_days, fmt: v => fmtDaysHours(v * 86400) },
-  { title: "Pending deposits", accent: "brand",
+  { title: "Pending deposits", accent: "entry",
     val: s => s.entry_pending_count, fmt: v => fmtInt(Math.round(v)) },
-  { title: "Pending partials", accent: "brand",
+  { title: "Pending partials", accent: "exit",
     val: s => s.partial_count, fmt: v => fmtInt(Math.round(v)) },
 ];
 
@@ -2088,76 +2104,198 @@ function _fmtShortDate(iso) {
   const d = new Date(iso + "T00:00:00Z");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 }
+function _fmtLongDate(iso) {
+  const d = new Date(iso + "T00:00:00Z");
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+function _fmtFootDate(ms, spanMs) {
+  // Past ~10 months the day-of-month is noise; show month + year instead.
+  const opts = spanMs > 300 * 86400000
+    ? { month: "short", year: "numeric", timeZone: "UTC" }
+    : { month: "short", day: "numeric", timeZone: "UTC" };
+  return new Date(ms).toLocaleDateString(undefined, opts);
+}
 
-// Hand-rolled SVG line+area chart, matching the bespoke-SVG idiom used by the
-// queue gauges. Colour comes from CSS tokens so dark mode just works.
-function _lineChartSVG(points, accent) {
-  const W = 320, H = 120, padL = 8, padR = 8, padT = 12, padB = 18;
-  const color = accent === "peer" ? "var(--peer)" : "var(--primary)";
-  const baseY = H - padB;
-  const n = points.length;
+// "Nice" tick values (1/2/2.5/5 × 10^k steps) inside [min, max] — drives the
+// horizontal gridlines and the HTML y-axis labels.
+function _niceTicks(min, max, target = 3) {
+  const span = max - min;
+  if (!(span > 0)) return [];
+  const raw = span / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  let step = 10 * mag;
+  for (const m of [1, 2, 2.5, 5, 10]) {
+    if (m * mag >= raw) { step = m * mag; break; }
+  }
+  const ticks = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) ticks.push(v);
+  return ticks.slice(0, 5);
+}
 
-  // X is positioned by actual date (not index) so any gap in the daily series
-  // shows as a gap, not a misleading single step.
+// Shared chart geometry: fractional (0..1) x/y per point. X is positioned by
+// actual date (not index) so any gap in the daily series shows as a gap, not a
+// misleading single step. Fractions map 1:1 onto both the 0–100 viewBox and
+// CSS percentage offsets, so HTML overlays (labels, crosshair, dot) land
+// exactly on the stretched SVG at any rendered size.
+function _chartGeom(points) {
   const ts = points.map(p => new Date(p.date + "T00:00:00Z").getTime());
-  let tmin = Math.min(...ts), tmax = Math.max(...ts);
-  const x = i => tmax === tmin ? W / 2 : padL + ((ts[i] - tmin) / (tmax - tmin)) * (W - padL - padR);
-
+  const tmin = Math.min(...ts), tmax = Math.max(...ts);
+  const fx = ts.map(t => tmax === tmin ? 0.5 : (t - tmin) / (tmax - tmin));
   const vals = points.map(p => p.value);
   let min = Math.min(...vals), max = Math.max(...vals);
   if (min === max) { min -= 1; max += 1; } // flat series → give the line air
-  const y = v => baseY - ((v - min) / (max - min)) * (baseY - padT);
+  const padT = 0.08, padB = 0.04;
+  const fyOf = v => padT + (1 - (v - min) / (max - min)) * (1 - padT - padB);
+  return {
+    ts, tmin, tmax, fx,
+    fy: vals.map(fyOf),
+    ticks: _niceTicks(min, max).map(v => ({ value: v, fy: fyOf(v) })),
+  };
+}
 
-  const dots = points.map((p, i) =>
-    `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="${i === n - 1 ? 3 : 1.8}"
-       fill="${color}" ${i === n - 1 ? '' : 'fill-opacity="0.55"'} />`).join("");
-
-  if (n === 1) {
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="hc-svg">${dots}</svg>`;
+// Geometry-only SVG (line + area + gridlines) — all text lives in HTML so
+// preserveAspectRatio="none" can stretch the plot without distorting type.
+// Colour comes from CSS tokens so dark mode just works.
+function _plotSVG(geom, color, cls, lineW, areaOpacity) {
+  const X = i => (geom.fx[i] * 100).toFixed(2);
+  const Y = i => (geom.fy[i] * 100).toFixed(2);
+  const n = geom.fx.length;
+  const grid = geom.ticks.map(t => {
+    const y = (t.fy * 100).toFixed(2);
+    return `<line x1="0" x2="100" y1="${y}" y2="${y}" stroke="var(--border)"
+       stroke-dasharray="3 5" vector-effect="non-scaling-stroke" />`;
+  }).join("");
+  if (n < 2) {
+    return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" class="${cls}">${grid}</svg>`;
   }
-
-  const line = points.map((p, i) => `${i ? "L" : "M"} ${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(" ");
-  const area = `${line} L ${x(n - 1).toFixed(1)} ${baseY} L ${x(0).toFixed(1)} ${baseY} Z`;
+  const line = geom.fx.map((_, i) => `${i ? "L" : "M"} ${X(i)} ${Y(i)}`).join(" ");
+  const area = `${line} L ${X(n - 1)} 100 L ${X(0)} 100 Z`;
   return `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="hc-svg">
-      <path d="${area}" fill="${color}" fill-opacity="0.09" stroke="none" />
-      <path d="${line}" fill="none" stroke="${color}" stroke-width="2"
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="${cls}">
+      ${grid}
+      <path d="${area}" fill="${color}" fill-opacity="${areaOpacity}" stroke="none" />
+      <path d="${line}" fill="none" stroke="${color}" stroke-width="${lineW}"
             stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
-      ${dots}
     </svg>`;
 }
 
-function _historyChartHTML(def, rows) {
+function _historyPlotSVG(geom, accent) {
+  return _plotSVG(geom, ACCENT_COLORS[accent] || "var(--stat)", "hc-svg", 1.75, 0.08);
+}
+
+// 30-day sparkline for the stat cells. Empty placeholder (reserves the
+// row height, no layout shift) until /history/daily has loaded.
+function _sparkHTML(valFn, accent) {
+  const snaps = state.history && state.history.snapshots;
+  const points = (snaps || []).slice(-30)
+    .map(r => ({ date: r.date, value: valFn(r) }))
+    .filter(p => p.value != null && isFinite(p.value));
+  if (points.length < 2) return `<span class="spark-wrap"></span>`;
+  const geom = _chartGeom(points);
+  geom.ticks = []; // sparklines carry no gridlines
+  const svg = _plotSVG(geom, ACCENT_COLORS[accent] || "var(--stat)", "spark", 1.5, 0.07);
+  return `<span class="spark-wrap">${svg}</span>`;
+}
+
+// Per-render cache of chart geometry, indexed by card data-idx — the hover
+// handler reads it instead of re-deriving anything from the DOM.
+let _histGeoms = [];
+
+function _historyChartHTML(def, rows, idx) {
   const points = rows
     .map(r => ({ date: r.date, value: def.val(r) }))
     .filter(p => p.value != null && isFinite(p.value));
   if (!points.length) return "";
-  const latest = points[points.length - 1].value;
+  const geom = _chartGeom(points);
+  _histGeoms[idx] = { geom, points, def };
+  const last = points[points.length - 1];
+  const ylabs = geom.ticks.map(t =>
+    `<span class="hc-ylab" style="top: ${(t.fy * 100).toFixed(2)}%">${escapeHtml(def.fmt(t.value))}</span>`).join("");
+  const span = geom.tmax - geom.tmin;
+  const footDates = [0, 1 / 3, 2 / 3, 1].map(f =>
+    `<span>${escapeHtml(_fmtFootDate(geom.tmin + f * span, span))}</span>`).join("");
   return `
-    <div class="history-card accent-${def.accent}">
-      <span class="kicker">— ${escapeHtml(def.title)}</span>
-      <span class="hc-hero">${escapeHtml(def.fmt(latest))}</span>
-      <div class="hc-chart">${_lineChartSVG(points, def.accent)}</div>
-      <div class="hc-foot">
-        <span>${escapeHtml(_fmtShortDate(points[0].date))}</span>
-        <span>${escapeHtml(_fmtShortDate(points[points.length - 1].date))}</span>
+    <div class="history-card accent-${def.accent}" data-idx="${idx}">
+      <div class="hc-head">
+        <div class="hc-head-l">
+          <span class="kicker">— ${escapeHtml(def.title)}</span>
+          <span class="hc-hero">${escapeHtml(def.fmt(last.value))}</span>
+        </div>
+        <div class="hc-readout">
+          <span class="hc-ro-meta"><span class="hc-ro-tag">latest</span><span class="hc-ro-date">${escapeHtml(_fmtLongDate(last.date))}</span></span>
+          <span class="hc-ro-val">${escapeHtml(def.fmt(last.value))}</span>
+        </div>
       </div>
+      <div class="hc-chart">
+        ${_historyPlotSVG(geom, def.accent)}
+        <div class="hc-cross"></div>
+        <div class="hc-dot"></div>
+        ${ylabs}
+      </div>
+      <div class="hc-foot">${footDates}</div>
     </div>`;
 }
 
-async function loadHistory() {
+// Four present-tense cards above the series — the page leads with where the
+// network is *now*, the charts below say how it got there.
+function renderHistoryTopline() {
+  const root = $("#history-topline");
+  if (!root) return;
+  const en = state.entryQueue, eq = state.exitQueue, n = state.network;
+  if (!en || !eq || !n) { root.innerHTML = _loadingCells(4); return; }
+  const enWaitH = (en.drain_days || 0) * 24;
+  const exWaitH = eq.estimated_wait_hours || 0;
+  const sevSub = sev =>
+    `<span class="${sev === "clear" ? "pos" : sev === "congested" ? "neg" : ""}">${escapeHtml(sev)}</span>`;
+  const stakeM = n.total_stake_eth >= 1_000_000
+    ? `${(n.total_stake_eth / 1_000_000).toFixed(2)}M`
+    : fmtInt(Math.round(n.total_stake_eth));
+  root.innerHTML = `
+    <div class="cell">
+      <span class="k">Entry queue · wait</span>
+      <span class="v">${fmtHours(enWaitH)}</span>
+      <span class="sub">${sevSub(queueTier(enWaitH))}</span>
+      ${_sparkHTML(s => s.entry_drain_days * 24, "entry")}
+    </div>
+    <div class="cell">
+      <span class="k">Exit queue · wait</span>
+      <span class="v">${fmtHours(exWaitH)}</span>
+      <span class="sub">${sevSub(queueTier(exWaitH))}</span>
+      ${_sparkHTML(s => s.exit_wait_hours, "exit")}
+    </div>
+    <div class="cell">
+      <span class="k">ETH staked</span>
+      <span class="v">${stakeM}</span>
+      <span class="sub">ETH staked network-wide</span>
+      ${_sparkHTML(s => s.total_stake_gwei / GWEI, "stat")}
+    </div>
+    <div class="cell">
+      <span class="k">Validators</span>
+      <span class="v">${fmtInt(n.active_validators)}</span>
+      <span class="sub">active validators</span>
+      ${_sparkHTML(s => s.active_validators, "stat")}
+    </div>`;
+}
+
+function loadHistory() {
+  if (state.historyLoading) return state.historyLoading; // in-flight: share it
   const root = $("#history-charts");
   const err = $("#history-error");
   if (root && !state.history) {
     root.innerHTML = `<div class="history-empty">Loading series…</div>`;
   }
-  try {
-    state.history = await api("/history/daily");
-    if (err) err.hidden = true;
-    renderHistory();
-  } catch (e) {
-    if (err) { err.hidden = false; err.textContent = `Could not load history · ${e.message || e}`; }
-  }
+  state.historyLoading = (async () => {
+    try {
+      state.history = await api("/history/daily");
+      if (err) err.hidden = true;
+      renderHistory();
+    } catch (e) {
+      if (err) { err.hidden = false; err.textContent = `Could not load history · ${e.message || e}`; }
+    } finally {
+      state.historyLoading = null;
+    }
+  })();
+  return state.historyLoading;
 }
 
 function renderHistory() {
@@ -2172,13 +2310,13 @@ function renderHistory() {
   if (state.historyRange !== "all") {
     rows = all.slice(-parseInt(state.historyRange, 10));
   }
-  root.innerHTML = HISTORY_CHARTS.map(c => _historyChartHTML(c, rows)).join("");
+  _histGeoms = [];
+  root.innerHTML = HISTORY_CHARTS.map((c, i) => _historyChartHTML(c, rows, i)).join("");
 }
 
 function wireHistory() {
   const bar = $("#history-range");
-  if (!bar) return;
-  bar.addEventListener("click", e => {
+  if (bar) bar.addEventListener("click", e => {
     const a = e.target.closest("a[data-range]");
     if (!a) return;
     e.preventDefault();
@@ -2186,6 +2324,57 @@ function wireHistory() {
     $$("#history-range a").forEach(x => x.classList.toggle("active", x === a));
     renderHistory();
   });
+  _wireHistoryHover();
+}
+
+// Hover: one delegated pointer handler for all cards. Nearest-point lookup
+// against the cached geometry, then pure style/textContent mutation — no
+// innerHTML on mousemove.
+function _wireHistoryHover() {
+  const root = $("#history-charts");
+  if (!root) return;
+  let hovered = null;
+
+  const reset = () => {
+    if (!hovered) return;
+    hovered.classList.remove("is-hover");
+    const rec = _histGeoms[+hovered.dataset.idx];
+    if (rec && hovered.isConnected) {
+      const last = rec.points[rec.points.length - 1];
+      hovered.querySelector(".hc-ro-tag").textContent = "latest";
+      hovered.querySelector(".hc-ro-date").textContent = _fmtLongDate(last.date);
+      hovered.querySelector(".hc-ro-val").textContent = rec.def.fmt(last.value);
+    }
+    hovered = null;
+  };
+
+  root.addEventListener("pointermove", e => {
+    const card = e.target.closest(".history-card");
+    const rec = card && _histGeoms[+card.dataset.idx];
+    if (!rec) { reset(); return; }
+    if (hovered && hovered !== card) reset();
+    hovered = card;
+    card.classList.add("is-hover");
+
+    const rect = card.querySelector(".hc-chart").getBoundingClientRect();
+    const fx = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < rec.geom.fx.length; i++) {
+      const d = Math.abs(rec.geom.fx[i] - fx);
+      if (d < bd) { bd = d; best = i; }
+    }
+    const px = (rec.geom.fx[best] * 100).toFixed(2) + "%";
+    card.querySelector(".hc-cross").style.left = px;
+    const dot = card.querySelector(".hc-dot");
+    dot.style.left = px;
+    dot.style.top = (rec.geom.fy[best] * 100).toFixed(2) + "%";
+    const p = rec.points[best];
+    card.querySelector(".hc-ro-tag").textContent = "";
+    card.querySelector(".hc-ro-date").textContent = _fmtLongDate(p.date);
+    card.querySelector(".hc-ro-val").textContent = rec.def.fmt(p.value);
+  });
+  root.addEventListener("pointerleave", reset);
+  root.addEventListener("pointercancel", reset);
 }
 
 /* ---------- Boot ---------- */
@@ -2207,6 +2396,10 @@ async function boot() {
     console.error("boot failed", err);
     showBootError(err.message || String(err));
   }
+
+  // History feeds the home sparklines too — fetch once, non-blocking, then
+  // re-render the cells. The 60s loop reuses the cache (data changes daily).
+  loadHistory().then(() => renderAll());
 
   // Refresh every minute
   setInterval(async () => {
