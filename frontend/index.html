@@ -47,10 +47,10 @@
                     </svg>
                 </a>
 
-                <ul class="primary-tabs" role="tablist">
+                <ul class="primary-tabs" id="primary-tabs" role="tablist">
                     <li>
                         <a data-tab-link="home" href="#home" role="tab"
-                            >Exits</a
+                            >Dashboard</a
                         >
                     </li>
                     <li>
@@ -88,6 +88,11 @@
                 </ul>
 
                 <div class="utilities">
+                    <div class="nav-refreshed" title="Last refresh from beacon node">
+                        <span class="live-dot"></span>
+                        <span class="k">Refreshed</span>
+                        <span class="v" id="cx-refreshed">—</span>
+                    </div>
                     <button class="theme-toggle" aria-label="Toggle dark mode">
                         <svg
                             class="moon"
@@ -117,43 +122,25 @@
                             />
                         </svg>
                     </button>
+                    <button
+                        class="nav-toggle"
+                        aria-label="Menu"
+                        aria-expanded="false"
+                        aria-controls="primary-tabs"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                        >
+                            <path d="M3 6h18M3 12h18M3 18h18" />
+                        </svg>
+                    </button>
                 </div>
             </div>
         </nav>
-
-        <!-- ================================================================
-       Context bar — epoch + churn + refreshed
-       ================================================================ -->
-        <header
-            class="context-bar"
-            id="context-bar"
-            aria-label="Network context"
-        >
-            <div class="container context-row">
-                <div class="dash-status">
-                    <div class="dash-stat-pill live">
-                        <span class="live-dot"></span>
-                        <span class="v">live · beacon node</span>
-                    </div>
-                    <div class="dash-stat-pill">
-                        <span class="k">Epoch</span>
-                        <span class="v" id="cx-epoch">—</span>
-                    </div>
-                    <div class="dash-stat-pill">
-                        <span class="k">Churn</span>
-                        <span class="v" id="cx-churn">—</span>
-                    </div>
-                    <div class="dash-stat-pill">
-                        <span class="k">Active stake</span>
-                        <span class="v" id="cx-stake">—</span>
-                    </div>
-                    <div class="dash-stat-pill">
-                        <span class="k">Refreshed</span>
-                        <span class="v" id="cx-refreshed">—</span>
-                    </div>
-                </div>
-            </div>
-        </header>
 
         <main>
             <!-- ================================================================
@@ -595,7 +582,7 @@
                     <div>
                         <h4>Pages</h4>
                         <p>
-                            <a href="#home">Exits</a><br />
+                            <a href="#home">Dashboard</a><br />
                             <a href="#validators">Validators</a><br />
                             <a href="#consolidations">Consolidations</a>
                         </p>

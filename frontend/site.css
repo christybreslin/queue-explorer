@@ -309,6 +309,37 @@ body.theme-dark .experimental-banner {
   color: var(--bg);
 }
 
+/* Refreshed indicator — sits beside the theme toggle */
+.nav-refreshed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: var(--t-cap);
+  font-feature-settings: "tnum";
+}
+.nav-refreshed .live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand-5);
+  box-shadow: 0 0 0 3px hsla(146, 71%, 46%, 0.18);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.nav-refreshed .k {
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.nav-refreshed .v {
+  color: var(--text-strong);
+  font-weight: 540;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 720px) {
+  .nav-refreshed .k { display: none; }
+}
+
 /* Theme toggle */
 .theme-toggle {
   width: 38px;
@@ -1139,9 +1170,55 @@ footer.site-foot .legal {
   }
 }
 
-/* Hide primary tabs at narrow widths — the brand link still works as 'home' fallback */
+/* Mobile nav — hamburger toggles the tab list into a dropdown panel.
+   Desktop: hamburger hidden, tabs are the inline row. */
+.nav-toggle {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color var(--t-short), border-color var(--t-short);
+}
+.nav-toggle:hover { color: var(--text-strong); border-color: var(--text-strong); }
+.nav-toggle svg { width: 18px; height: 18px; }
+
 @media (max-width: 980px) {
-  .site-nav .primary-tabs { display: none; }
+  .nav-toggle { display: inline-flex; }
+  /* Tab list becomes a closed dropdown panel below the nav bar */
+  .site-nav .primary-tabs {
+    position: absolute;
+    top: var(--nav-h);
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    height: auto;
+    gap: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-nav);
+    display: none;
+  }
+  .site-nav.nav-open .primary-tabs { display: flex; }
+  .site-nav .primary-tabs li { width: 100%; }
+  .site-nav .primary-tabs a {
+    width: 100%;
+    height: auto;
+    padding: 14px var(--container-pad-x);
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+  }
+  .site-nav .primary-tabs li:last-child a { border-bottom: 0; }
+  .site-nav .primary-tabs a.active {
+    border-bottom-color: var(--border);
+    border-left-color: var(--primary);
+  }
+  .site-nav .primary-tabs li:last-child a.active { border-bottom-color: transparent; }
 }
 
 /* ============================================================
@@ -3849,6 +3926,19 @@ table.full-table tbody tr.inst-member-row td:first-child {
   background: var(--text-strong);
   color: var(--bg);
 }
+@media (max-width: 720px) {
+  /* Keep each label on one line; scroll the pill sideways if the four don't fit */
+  .seg-switch {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .seg-switch button {
+    white-space: nowrap;
+    padding: 5px 10px;
+    font-size: var(--t-cap);
+  }
+}
 
 /* Input + form atoms (predictor, lookup, validators) */
 .input-with-suffix { position: relative; flex: 1; }
@@ -5944,6 +6034,14 @@ table.full-table tbody tr.inst-member-row td:first-child {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-faint);
+}
+@media (max-width: 720px) {
+  /* Let the refresh button + stamp drop to their own line instead of
+     pushing past the right edge */
+  .method-refresh-group {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
 }
 
 /* ============================================================

@@ -170,6 +170,7 @@ function applyTab() {
   const t = tabFromHash();
   $$("[data-tab-content]").forEach(el => { el.hidden = el.dataset.tabContent !== t; });
   $$("[data-tab-link]").forEach(a => { a.classList.toggle("active", a.dataset.tabLink === t); });
+  closeNavMenu();
   window.scrollTo(0, 0);
   // Lazy load per-tab data
   if (t === "consolidations" && !state.consolidations) {
@@ -187,6 +188,33 @@ function wireTabs() {
   applyTab();
 }
 
+/* ---------- Mobile nav menu (hamburger dropdown) ---------- */
+function closeNavMenu() {
+  const nav = $(".site-nav");
+  if (!nav || !nav.classList.contains("nav-open")) return;
+  nav.classList.remove("nav-open");
+  $(".nav-toggle")?.setAttribute("aria-expanded", "false");
+}
+function wireNavMenu() {
+  const nav = $(".site-nav");
+  const btn = $(".nav-toggle");
+  if (!nav || !btn) return;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = nav.classList.toggle("nav-open");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  // Tapping a tab link closes the menu (applyTab also clears it on hashchange)
+  $$("[data-tab-link]").forEach(a => a.addEventListener("click", closeNavMenu));
+  // Outside click + Escape dismiss
+  document.addEventListener("pointerdown", (e) => {
+    if (!nav.contains(e.target)) closeNavMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeNavMenu();
+  });
+}
+
 /* ---------- Boot overlay ---------- */
 function hideBootOverlay() {
   const o = $("#boot-overlay");
@@ -199,9 +227,6 @@ function showBootError(msg) {
 
 /* ---------- Context bar ---------- */
 function renderContext() {
-  $("#cx-epoch")    .textContent = state.exitQueue ? fmtInt(state.exitQueue.current_epoch) : "—";
-  $("#cx-churn")    .textContent = state.churn ? `${fmtEth(state.churn.churn_limit_eth, 0)} ETH/epoch` : "—";
-  $("#cx-stake")    .textContent = state.churn ? `${(state.churn.total_active_balance_eth / 1_000_000).toFixed(2)}M ETH` : "—";
   $("#cx-refreshed").textContent = state.lastUpdated ? fmtTime(state.lastUpdated) : "—";
   $("#foot-refreshed").textContent = state.lastUpdated ? fmtTime(state.lastUpdated) : "—";
 }
@@ -2382,6 +2407,7 @@ async function boot() {
   initTheme();
   wireTheme();
   wireTabs();          // BEFORE await — so nav works even if data load fails
+  wireNavMenu();
   wirePredictor();
   wireHomeLookup();
   wireValidators();
