@@ -155,6 +155,8 @@ async def compute_entry_queue(
         "drain_days": drain_days,
         "drain_seconds": drain_seconds,
         "severity": severity,
+        "buckets": pending_agg.get("buckets"),
+        "first_10": pending_agg.get("first_10"),
     }
 
 

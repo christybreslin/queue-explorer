@@ -54,6 +54,11 @@
                         >
                     </li>
                     <li>
+                        <a data-tab-link="queues" href="#queues" role="tab"
+                            >Queues</a
+                        >
+                    </li>
+                    <li>
                         <a
                             data-tab-link="validators"
                             href="#validators"
@@ -247,6 +252,80 @@
                             </div>
                             <!-- legacy ids retained so existing renderer continues to work -->
                             <span id="pw-pill" hidden><span id="pw-pill-total"></span></span>
+                        </div>
+
+                    </div>
+                </section>
+            </div>
+
+            <!-- ================================================================
+         #queues  ·  full breakout of entry / exit / consolidation queues
+         ================================================================ -->
+            <div class="tab-pane" data-tab-content="queues" role="tabpanel" hidden>
+                <section class="dashboard">
+                    <div class="container queues-stage">
+
+                        <!-- ===== Entry queue ===== -->
+                        <div class="home-section q-section">
+                            <div class="q-head">
+                                <span class="kicker">— Entry queue</span>
+                                <p class="dash-card-deck">
+                                    New deposits wait here before activation. The protocol admits at most the
+                                    <strong>activation/exit churn</strong> — a per-epoch ETH budget — plus a hard cap of
+                                    16 deposits per epoch, so the wait scales with both the ETH queued and the deposit count.
+                                    <a class="q-method-link" href="#methodology">see the full spec walk in Methodology →</a>
+                                </p>
+                            </div>
+                            <div class="q-top">
+                                <div class="queue-gauge" id="q-entry-gauge"></div>
+                                <div class="home-network-stats q-kpis" id="q-entry-kpis"></div>
+                            </div>
+                            <div class="q-charts" id="q-entry-charts"></div>
+                            <div class="q-detail">
+                                <span class="kicker">— Pending deposits by size</span>
+                                <div id="q-entry-detail"></div>
+                            </div>
+                        </div>
+
+                        <!-- ===== Exit queue ===== -->
+                        <div class="home-section q-section">
+                            <div class="q-head">
+                                <span class="kicker">— Exit queue</span>
+                                <p class="dash-card-deck">
+                                    Validators requesting a full exit drain at the <strong>exit churn</strong> — the same
+                                    per-epoch ETH budget as activations. After the exit epoch the stake stays locked through
+                                    the withdrawability delay before it can be swept.
+                                    <a class="q-method-link" href="#methodology">see the full spec walk in Methodology →</a>
+                                </p>
+                            </div>
+                            <div class="q-top">
+                                <div class="queue-gauge" id="q-exit-gauge"></div>
+                                <div class="home-network-stats q-kpis" id="q-exit-kpis"></div>
+                            </div>
+                            <div class="q-charts" id="q-exit-charts"></div>
+                            <div class="q-detail">
+                                <span class="kicker">— Exit schedule by epoch</span>
+                                <div id="q-exit-detail"></div>
+                            </div>
+                        </div>
+
+                        <!-- ===== Consolidation queue ===== -->
+                        <div class="home-section q-section">
+                            <div class="q-head">
+                                <span class="kicker">— Consolidation queue</span>
+                                <p class="dash-card-deck">
+                                    Source validators merging their stake into a single 0x02 target. Consolidations draw from
+                                    their own <strong>consolidation churn</strong> = balance churn − activation/exit churn —
+                                    a separate budget from entries and exits.
+                                    <a class="q-method-link" href="#methodology">see the full spec walk in Methodology →</a>
+                                </p>
+                            </div>
+                            <div class="home-network-stats q-kpis q-kpis-wide" id="q-consol-kpis"></div>
+                            <div class="q-charts" id="q-consol-charts"></div>
+                            <div class="q-detail">
+                                <span class="kicker">— Source → target</span>
+                                <div class="consolidation-list" id="q-consol-list"></div>
+                            </div>
                         </div>
 
                     </div>
@@ -475,13 +554,6 @@
                                 <span class="kicker"
                                     >Component · Pending consolidations</span
                                 >
-                                <h1 class="dash-title">
-                                    Consolidating <em>targets</em>.
-                                </h1>
-                                <p class="dash-card-deck">
-                                    Source validators sweeping their balance
-                                    into a single compounding target.
-                                </p>
                             </div>
                         </header>
 

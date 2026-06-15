@@ -9,7 +9,7 @@
 const API = new URLSearchParams(location.search).get("api")
           || window.API_BASE
           || ""; // same-origin (mounted by FastAPI)
-const TABS = ["home", "validators", "consolidations", "methodology", "history"];
+const TABS = ["home", "queues", "validators", "consolidations", "methodology", "history"];
 const FAR_FUTURE = "18446744073709551615";
 const EPOCH_SECONDS = 384; // 32 slots × 12s
 const GWEI = 1_000_000_000;
@@ -73,6 +73,17 @@ function fmtDaysHours(seconds) {
   if (hours || (days && minutes)) parts.push(`${hours}h`);
   if (minutes) parts.push(`${minutes}m`);
   return parts.join(" ") || "0m";
+}
+
+// Always shows hours AND minutes (never collapses the zeros); days only when
+// ≥1. Used for the queue "wait" gauges, e.g. "50d 0h 46m" / "17h 10m".
+function fmtDHM(seconds) {
+  if (seconds === null || seconds === undefined) return "—";
+  const totalMinutes = Math.max(0, Math.round(seconds / 60));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  return days >= 1 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
 }
 
 function fmtAgo(d) {
@@ -173,6 +184,9 @@ function applyTab() {
   closeNavMenu();
   window.scrollTo(0, 0);
   // Lazy load per-tab data
+  if (t === "queues") {
+    loadQueues();
+  }
   if (t === "consolidations" && !state.consolidations) {
     loadConsolidations();
   }
@@ -393,7 +407,7 @@ function renderExitQueueStats() {
 
   root.innerHTML = gaugeHTML({
     title: "Exit queue · wait",
-    value: fmtHours(waitH),
+    value: fmtDHM(waitH * 3600),
     severity,
     footLeft: "CLEAR",
     footRight: "HIGH",
@@ -418,7 +432,7 @@ function renderEntryQueueStats() {
 
   root.innerHTML = gaugeHTML({
     title: "Entry queue · wait",
-    value: fmtHours(waitH),
+    value: fmtDHM(waitH * 3600),
     severity,
     footLeft: "CLEAR",
     footRight: "HIGH",
@@ -527,7 +541,7 @@ function renderPendingWithdrawals() {
     const tone = ageHours === null ? "" : ageHours <= 0 ? "tone-ok" : ageHours < 1 ? "tone-blue" : "";
     return `
       <tr>
-        <td><a href="https://beaconcha.in/validator/${w.validator_index}" target="_blank" rel="noopener noreferrer">#${escapeHtml(w.validator_index)}</a></td>
+        <td><a href="#home" class="vlink" data-vidx="${w.validator_index}">#${escapeHtml(w.validator_index)}</a></td>
         <td>${_fmtPwAmount(w.amount_eth)} ETH</td>
         <td style="color: var(--text-muted);">${fmtInt(w.withdrawable_epoch)}</td>
         <td>
@@ -618,13 +632,13 @@ function renderPredictResult(r, amount) {
     </header>
     <div class="predict-hero">
       <span class="k">${escapeHtml(heroLabel)}</span>
-      <span class="v">~${escapeHtml(fmtHours(totalHours))}</span>
+      <span class="v">~${escapeHtml(fmtDaysHours(totalHours * 3600))}</span>
       <span class="sub">${escapeHtml(sub)}</span>
     </div>
     <div class="predict-meta">
       <div class="cell">
         <span class="k">Queue wait</span>
-        <span class="v">${queueEpochs === 0 ? "0 m" : "~" + escapeHtml(fmtHours(queueHours))}</span>
+        <span class="v">${queueEpochs === 0 ? "0m" : "~" + escapeHtml(fmtDaysHours(queueHours * 3600))}</span>
         <span class="sub">${fmtInt(queueEpochs)} epoch${queueEpochs === 1 ? "" : "s"} ahead${queueEpochs === 0 ? " · no wait" : ""}</span>
       </div>
       <div class="cell">
@@ -643,6 +657,17 @@ function renderPredictResult(r, amount) {
 }
 
 /* ---------- Home: single-validator lookup using validatorDetail ---------- */
+// Open our own lookup for a validator index/pubkey on the Validators page:
+// switch tabs, fill the input, and run the batch lookup (auto-expands a single
+// result). Used by .vlink anchors anywhere in the app.
+function goToValidatorLookup(idx) {
+  const ids = parseValidatorInput(String(idx));
+  const input = $("#val-input");
+  if (input) { input.value = String(idx); input.dispatchEvent(new Event("input")); }
+  if (location.hash !== "#validators") location.hash = "#validators";
+  loadValidators(ids);
+}
+
 function wireHomeLookup() {
   const form  = $("#home-lookup-form");
   const input = $("#home-lookup-input");
@@ -676,6 +701,14 @@ function wireHomeLookup() {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     run(input.value);
+  });
+
+  // In-app validator-index links anywhere → open our own lookup.
+  document.addEventListener("click", (e) => {
+    const v = e.target.closest("a.vlink[data-vidx]");
+    if (!v) return;
+    e.preventDefault();
+    goToValidatorLookup(v.dataset.vidx);
   });
 
   // Delegate the dismiss buttons inside the result stack to clear panels.
@@ -875,7 +908,7 @@ function renderValList() {
       <div class="val-card expandable ${isExpanded ? "expanded" : ""}" data-val-index="${escapeHtml(lookupKey)}">
         <div class="row1">
           <div class="meta">
-            <a href="https://beaconcha.in/validator/${v.index}" target="_blank" rel="noopener noreferrer">#${escapeHtml(v.index)}</a>
+            <a href="#home" class="vlink" data-vidx="${v.index}">#${escapeHtml(v.index)}</a>
             <span class="${status.cls}"><span class="dot"></span>${status.label}</span>
             <span class="${cred.cls}">${v.credential_type === "compounding" ? `<span class="dot"></span>` : ""}${cred.label}</span>
           </div>
@@ -1441,7 +1474,15 @@ function renderConsolidations() {
     return;
   }
 
-  listRoot.innerHTML = data.targets.map(t => {
+  listRoot.innerHTML = consolidationCardsHTML(data.targets);
+  wireConsolidationCards(listRoot, renderConsolidations);
+}
+
+// Source→target consolidation cards, shared by the Consolidations tab and the
+// Queues tab's consolidation section. Expand state lives in
+// state.consolidationsOpen (shared across both views, same data).
+function consolidationCardsHTML(targets) {
+  return targets.map(t => {
     const status = statusChip(t.target_status);
     const isOpen = state.consolidationsOpen.has(t.target_index);
     return `
@@ -1451,7 +1492,7 @@ function renderConsolidations() {
             <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
           </svg>
           <div class="ident">
-            <a href="https://beaconcha.in/validator/${t.target_index}" target="_blank" rel="noopener noreferrer">#${escapeHtml(t.target_index)}</a>
+            <a href="#home" class="vlink" data-vidx="${t.target_index}">#${escapeHtml(t.target_index)}</a>
             <span class="${status.cls}"><span class="dot"></span>${status.label}</span>
           </div>
           <div class="stats">
@@ -1476,7 +1517,7 @@ function renderConsolidations() {
                   const ss = statusChip(s.status);
                   return `
                     <tr>
-                      <td><a href="https://beaconcha.in/validator/${s.index}" target="_blank" rel="noopener noreferrer" style="color: var(--text-strong); text-decoration: none;">#${escapeHtml(s.index)}</a></td>
+                      <td><a href="#home" class="vlink" data-vidx="${s.index}" style="color: var(--text-strong); text-decoration: none;">#${escapeHtml(s.index)}</a></td>
                       <td style="text-align:left;"><span class="${ss.cls}"><span class="dot"></span>${ss.label}</span></td>
                       <td>${fmtEth(s.balance_eth, 4)} ETH</td>
                       <td style="color: var(--text-muted);">${fmtEth(s.effective_balance_eth, 0)} ETH</td>
@@ -1491,7 +1532,9 @@ function renderConsolidations() {
       </div>
     `;
   }).join("");
+}
 
+function wireConsolidationCards(listRoot, rerender) {
   $$(".con-card .row-button", listRoot).forEach(btn => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -1499,9 +1542,260 @@ function renderConsolidations() {
       const id = card.dataset.target;
       if (state.consolidationsOpen.has(id)) state.consolidationsOpen.delete(id);
       else state.consolidationsOpen.add(id);
-      renderConsolidations();
+      rerender();
     });
   });
+}
+
+/* ============================================================
+   Queues tab — full breakout of entry / exit / consolidation
+   Composes the existing gauge, KPI-cell, history-chart and
+   consolidation-card machinery into one detailed page.
+   ============================================================ */
+
+// Per-queue historical charts. Same {title, accent, val, fmt} shape as
+// HISTORY_CHARTS; every `val` reads a column already in /history/daily.
+const QUEUE_CHARTS = {
+  entry: [
+    { title: "Entry queue wait", accent: "entry",
+      val: s => s.entry_drain_days, fmt: v => fmtDaysHours(v * 86400) },
+    { title: "Pending deposits", accent: "entry",
+      val: s => s.entry_pending_count, fmt: v => fmtInt(Math.round(v)) },
+    { title: "ETH entering", accent: "entry",
+      val: s => s.entry_pending_eth, fmt: v => _fmtEthCompact(v) + " ETH" },
+  ],
+  exit: [
+    { title: "Exit queue wait", accent: "exit",
+      val: s => s.exit_wait_hours, fmt: v => fmtHours(v) },
+    { title: "Validators exiting", accent: "exit",
+      val: s => s.exit_count, fmt: v => fmtInt(Math.round(v)) },
+    { title: "ETH exiting", accent: "exit",
+      val: s => s.exit_balance_gwei / GWEI, fmt: v => _fmtEthCompact(v) + " ETH" },
+  ],
+  consol: [
+    { title: "Pending consolidations", accent: "peer",
+      val: s => s.pending_consolidations, fmt: v => fmtInt(Math.round(v)) },
+    { title: "Target validators", accent: "peer",
+      val: s => s.pending_consolidation_targets, fmt: v => fmtInt(Math.round(v)) },
+  ],
+};
+
+function sevSubHTML(sev) {
+  return `<span class="${sev === "clear" ? "pos" : sev === "congested" ? "neg" : ""}">${escapeHtml(sev)}</span>`;
+}
+function _loadingGauge() {
+  return `<div style="color: var(--text-faint); font-family: var(--mono); font-size: 11px;">Loading…</div>`;
+}
+
+// consolidation_churn = balance_churn − activation/exit churn (Electra).
+// /churn gives total_active_balance and the ae churn (churn_limit_eth).
+function consolidationChurnEth(ch) {
+  if (!ch) return null;
+  const balanceChurn = Math.max(128, Math.floor((ch.total_active_balance_eth || 0) / 65536));
+  return Math.max(0, balanceChurn - (ch.churn_limit_eth || 0));
+}
+
+function loadQueues() {
+  const tasks = [];
+  if (!state.entryQueue || !state.exitQueue || !state.churn) {
+    tasks.push((async () => {
+      const [eq, enq, ch] = await Promise.all([
+        api("/exit-queue").catch(() => state.exitQueue),
+        api("/entry-queue").catch(() => state.entryQueue),
+        api("/churn").catch(() => state.churn),
+      ]);
+      state.exitQueue = eq; state.entryQueue = enq; state.churn = ch;
+    })());
+  }
+  if (!state.consolidations) tasks.push(loadConsolidations());
+  if (!state.history) tasks.push(loadHistory());
+
+  renderQueues(); // paint immediately with whatever's cached (loading states fill gaps)
+  if (tasks.length) Promise.all(tasks).then(renderQueues, renderQueues);
+}
+
+function renderQueues() {
+  renderQueuesEntry();
+  renderQueuesExit();
+  renderQueuesConsol();
+  renderQueuesCharts();
+  if (!state.queuesWired) {
+    const pane = $('[data-tab-content="queues"]');
+    if (pane) { wireChartHover(pane, _queueGeoms); state.queuesWired = true; }
+  }
+}
+
+function renderQueuesEntry() {
+  const en = state.entryQueue;
+  const gaugeRoot = $("#q-entry-gauge"), kpiRoot = $("#q-entry-kpis"), detail = $("#q-entry-detail");
+  if (!en) {
+    if (gaugeRoot) gaugeRoot.innerHTML = _loadingGauge();
+    if (kpiRoot) kpiRoot.innerHTML = _loadingCells(4);
+    return;
+  }
+  const waitH = (en.drain_days || 0) * 24;
+  const severity = queueTier(waitH);
+  if (gaugeRoot) gaugeRoot.innerHTML = gaugeHTML({
+    title: "Entry queue · wait", value: fmtDHM(waitH * 3600), severity,
+    footLeft: "CLEAR", footRight: "HIGH", pct: queueFillPct(waitH),
+  }) + `<span class="gauge-meta">${fmtInt(en.finalized_count)} finalized · ${fmtEth(en.finalized_eth, 0)} ETH ready</span>`;
+  if (kpiRoot) kpiRoot.innerHTML = `
+    <div class="cell">
+      <span class="k">Pending deposits</span>
+      <span class="v">${fmtInt(en.pending_count)}</span>
+      <span class="sub">${fmtEth(en.pending_eth, 0)} ETH queued</span>
+      ${_sparkHTML(s => s.entry_pending_count, "entry")}
+    </div>
+    <div class="cell">
+      <span class="k">Stake entering</span>
+      <span class="v">${fmtEth(en.finalized_eth, 0)}</span>
+      <span class="sub">ETH awaiting activation</span>
+      ${_sparkHTML(s => s.entry_finalized_eth, "entry")}
+    </div>
+    <div class="cell">
+      <span class="k">Activation churn</span>
+      <span class="v">${fmtEth(en.ae_churn_eth, 0)}</span>
+      <span class="sub">ETH / epoch admitted</span>
+    </div>
+    <div class="cell">
+      <span class="k">Drain estimate</span>
+      <span class="v">${fmtDHM(waitH * 3600)}</span>
+      <span class="sub">${sevSubHTML(severity)}</span>
+      ${_sparkHTML(s => s.entry_drain_days * 24, "entry")}
+    </div>`;
+  if (detail) detail.innerHTML = entryBucketsTable(en.buckets);
+}
+
+function entryBucketsTable(buckets) {
+  if (!buckets) return "";
+  const order = ["<32", "=32", "33-99", "100-499", "500-2047", ">=2048"];
+  const labels = {
+    "<32": "< 32 ETH", "=32": "= 32 ETH", "33-99": "33–99 ETH",
+    "100-499": "100–499 ETH", "500-2047": "500–2047 ETH", ">=2048": "≥ 2048 ETH",
+  };
+  const rows = order.filter(k => buckets[k]).map(k => {
+    const b = buckets[k];
+    return `<tr><td>${labels[k]}</td><td>${fmtInt(b.count)}</td><td>${_fmtEthCompact(b.eth)} ETH</td></tr>`;
+  }).join("");
+  if (!rows) return `<p class="q-empty">No pending deposits right now.</p>`;
+  return `<table class="full-table q-table"><thead><tr><th>Deposit size</th><th>Deposits</th><th>ETH</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderQueuesExit() {
+  const eq = state.exitQueue;
+  const gaugeRoot = $("#q-exit-gauge"), kpiRoot = $("#q-exit-kpis"), detail = $("#q-exit-detail");
+  if (!eq) {
+    if (gaugeRoot) gaugeRoot.innerHTML = _loadingGauge();
+    if (kpiRoot) kpiRoot.innerHTML = _loadingCells(4);
+    return;
+  }
+  const waitH = eq.estimated_wait_hours || 0;
+  const severity = queueTier(waitH);
+  const depth = eq.queue_depth_epochs || 0;
+  if (gaugeRoot) gaugeRoot.innerHTML = gaugeHTML({
+    title: "Exit queue · wait", value: fmtDHM(waitH * 3600), severity,
+    footLeft: "CLEAR", footRight: "HIGH", pct: queueFillPct(waitH),
+  }) + `<span class="gauge-meta">${fmtInt(eq.total_exiting_validators)} validator${eq.total_exiting_validators === 1 ? "" : "s"} · ${fmtInt(depth)} epoch${depth === 1 ? "" : "s"} deep</span>`;
+  if (kpiRoot) kpiRoot.innerHTML = `
+    <div class="cell">
+      <span class="k">Validators exiting</span>
+      <span class="v">${fmtInt(eq.total_exiting_validators)}</span>
+      <span class="sub">${sevSubHTML(severity)}</span>
+      ${_sparkHTML(s => s.exit_count, "exit")}
+    </div>
+    <div class="cell">
+      <span class="k">Stake exiting</span>
+      <span class="v">${fmtEth(eq.total_exiting_balance_eth, 0)}</span>
+      <span class="sub">ETH awaiting exit</span>
+      ${_sparkHTML(s => s.exit_balance_gwei / GWEI, "exit")}
+    </div>
+    <div class="cell">
+      <span class="k">Exit churn</span>
+      <span class="v">${fmtEth((eq.churn_limit_gwei || 0) / GWEI, 0)}</span>
+      <span class="sub">ETH / epoch out</span>
+    </div>
+    <div class="cell">
+      <span class="k">Queue depth</span>
+      <span class="v">${fmtInt(depth)}</span>
+      <span class="sub">epochs deep</span>
+      ${_sparkHTML(s => s.exit_queue_depth_epochs, "exit")}
+    </div>`;
+  if (detail) detail.innerHTML = exitScheduleTable(eq.per_epoch, eq.current_epoch);
+}
+
+function exitScheduleTable(perEpoch, currentEpoch) {
+  if (!perEpoch || !perEpoch.length) {
+    return `<p class="q-empty">No validators in the exit queue right now.</p>`;
+  }
+  const rows = perEpoch.map(p =>
+    `<tr><td>${fmtInt(currentEpoch + p.epochs_from_now)}</td><td>${fmtHours(p.epochs_from_now * EPOCH_SECONDS / 3600)}</td><td>${fmtInt(p.validator_count)}</td><td>${fmtEth(p.total_balance_eth, 2)} ETH</td></tr>`
+  ).join("");
+  return `
+    <details class="q-collapse">
+      <summary>
+        <svg class="chev" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+        </svg>
+        ${fmtInt(perEpoch.length)} exit epoch${perEpoch.length === 1 ? "" : "s"}
+      </summary>
+      <table class="full-table q-table"><thead><tr><th>Exit epoch</th><th>ETA</th><th>Validators</th><th>Balance</th></tr></thead><tbody>${rows}</tbody></table>
+    </details>`;
+}
+
+function renderQueuesConsol() {
+  const c = state.consolidations, ch = state.churn;
+  const kpiRoot = $("#q-consol-kpis"), listRoot = $("#q-consol-list");
+  if (!c || c.error) {
+    if (kpiRoot) kpiRoot.innerHTML = _loadingCells(4);
+    if (listRoot && c && c.error) listRoot.innerHTML = `<p class="q-empty">Could not load consolidations · ${escapeHtml(c.error)}</p>`;
+    return;
+  }
+  const consChurn = consolidationChurnEth(ch);
+  if (kpiRoot) kpiRoot.innerHTML = `
+    <div class="cell">
+      <span class="k">Pending consolidations</span>
+      <span class="v">${fmtInt(c.count)}</span>
+      <span class="sub">source validators</span>
+      ${_sparkHTML(s => s.pending_consolidations, "peer")}
+    </div>
+    <div class="cell">
+      <span class="k">Target validators</span>
+      <span class="v">${fmtInt(c.target_count)}</span>
+      <span class="sub">absorbing stake</span>
+      ${_sparkHTML(s => s.pending_consolidation_targets, "peer")}
+    </div>
+    <div class="cell">
+      <span class="k">Total consolidating</span>
+      <span class="v">${fmtEth(c.total_eth, 0)}</span>
+      <span class="sub">ETH incoming</span>
+    </div>
+    <div class="cell">
+      <span class="k">Consolidation churn</span>
+      <span class="v">${consChurn == null ? "—" : fmtEth(consChurn, 0)}</span>
+      <span class="sub">ETH / epoch merged</span>
+    </div>`;
+  if (listRoot) {
+    listRoot.innerHTML = (c.targets && c.targets.length)
+      ? consolidationCardsHTML(c.targets)
+      : `<p class="q-empty">No pending consolidations right now.</p>`;
+    if (c.targets && c.targets.length) wireConsolidationCards(listRoot, renderQueuesConsol);
+  }
+}
+
+function renderQueuesCharts() {
+  const all = (state.history && state.history.snapshots) || [];
+  const grids = { entry: $("#q-entry-charts"), exit: $("#q-exit-charts"), consol: $("#q-consol-charts") };
+  if (!all.length) {
+    Object.values(grids).forEach(g => { if (g) g.innerHTML = `<div class="history-empty">Loading series…</div>`; });
+    return;
+  }
+  _queueGeoms.length = 0;
+  let qi = 0;
+  for (const key of ["entry", "exit", "consol"]) {
+    const g = grids[key];
+    if (!g) continue;
+    g.innerHTML = QUEUE_CHARTS[key].map(c => _historyChartHTML(c, all, qi++, _queueGeoms, { compact: true })).join("");
+  }
 }
 
 /* ---------- Sortable PW table ---------- */
@@ -2222,29 +2516,37 @@ function _sparkHTML(valFn, accent) {
   return `<span class="spark-wrap">${svg}</span>`;
 }
 
-// Per-render cache of chart geometry, indexed by card data-idx — the hover
-// handler reads it instead of re-deriving anything from the DOM.
-let _histGeoms = [];
+// Per-render caches of chart geometry, indexed by card data-idx — the hover
+// handler reads its store instead of re-deriving anything from the DOM. Each
+// chart container (History tab, Queues tab) gets its own store so their
+// data-idx values never collide. Stores are mutated in place (never
+// reassigned) so the delegated hover handler keeps a live reference.
+const _histGeoms = [];
+const _queueGeoms = [];
 
-function _historyChartHTML(def, rows, idx) {
+// opts.compact drops the big duplicate hero number (Queues tab) — the chart
+// leads and the value lives only in the hover readout, which doubles as the
+// latest-value display when idle.
+function _historyChartHTML(def, rows, idx, store = _histGeoms, opts = {}) {
   const points = rows
     .map(r => ({ date: r.date, value: def.val(r) }))
     .filter(p => p.value != null && isFinite(p.value));
   if (!points.length) return "";
   const geom = _chartGeom(points);
-  _histGeoms[idx] = { geom, points, def };
+  store[idx] = { geom, points, def };
   const last = points[points.length - 1];
   const ylabs = geom.ticks.map(t =>
     `<span class="hc-ylab" style="top: ${(t.fy * 100).toFixed(2)}%">${escapeHtml(def.fmt(t.value))}</span>`).join("");
   const span = geom.tmax - geom.tmin;
   const footDates = [0, 1 / 3, 2 / 3, 1].map(f =>
     `<span>${escapeHtml(_fmtFootDate(geom.tmin + f * span, span))}</span>`).join("");
+  const heroHTML = opts.compact ? "" : `<span class="hc-hero">${escapeHtml(def.fmt(last.value))}</span>`;
   return `
-    <div class="history-card accent-${def.accent}" data-idx="${idx}">
+    <div class="history-card accent-${def.accent}${opts.compact ? " hc-compact" : ""}" data-idx="${idx}">
       <div class="hc-head">
         <div class="hc-head-l">
           <span class="kicker">— ${escapeHtml(def.title)}</span>
-          <span class="hc-hero">${escapeHtml(def.fmt(last.value))}</span>
+          ${heroHTML}
         </div>
         <div class="hc-readout">
           <span class="hc-ro-meta"><span class="hc-ro-tag">latest</span><span class="hc-ro-date">${escapeHtml(_fmtLongDate(last.date))}</span></span>
@@ -2278,13 +2580,13 @@ function renderHistoryTopline() {
   root.innerHTML = `
     <div class="cell">
       <span class="k">Entry queue · wait</span>
-      <span class="v">${fmtHours(enWaitH)}</span>
+      <span class="v">${fmtDHM(enWaitH * 3600)}</span>
       <span class="sub">${sevSub(queueTier(enWaitH))}</span>
       ${_sparkHTML(s => s.entry_drain_days * 24, "entry")}
     </div>
     <div class="cell">
       <span class="k">Exit queue · wait</span>
-      <span class="v">${fmtHours(exWaitH)}</span>
+      <span class="v">${fmtDHM(exWaitH * 3600)}</span>
       <span class="sub">${sevSub(queueTier(exWaitH))}</span>
       ${_sparkHTML(s => s.exit_wait_hours, "exit")}
     </div>
@@ -2335,7 +2637,7 @@ function renderHistory() {
   if (state.historyRange !== "all") {
     rows = all.slice(-parseInt(state.historyRange, 10));
   }
-  _histGeoms = [];
+  _histGeoms.length = 0;
   root.innerHTML = HISTORY_CHARTS.map((c, i) => _historyChartHTML(c, rows, i)).join("");
 }
 
@@ -2352,18 +2654,22 @@ function wireHistory() {
   _wireHistoryHover();
 }
 
-// Hover: one delegated pointer handler for all cards. Nearest-point lookup
-// against the cached geometry, then pure style/textContent mutation — no
-// innerHTML on mousemove.
 function _wireHistoryHover() {
-  const root = $("#history-charts");
+  wireChartHover($("#history-charts"), _histGeoms);
+}
+
+// Hover: one delegated pointer handler for all cards in `root`. Nearest-point
+// lookup against the cached geometry in `store`, then pure style/textContent
+// mutation — no innerHTML on mousemove. `root` and `store` are paired so the
+// History and Queues tabs can run independent hovers without idx collisions.
+function wireChartHover(root, store) {
   if (!root) return;
   let hovered = null;
 
   const reset = () => {
     if (!hovered) return;
     hovered.classList.remove("is-hover");
-    const rec = _histGeoms[+hovered.dataset.idx];
+    const rec = store[+hovered.dataset.idx];
     if (rec && hovered.isConnected) {
       const last = rec.points[rec.points.length - 1];
       hovered.querySelector(".hc-ro-tag").textContent = "latest";
@@ -2375,7 +2681,7 @@ function _wireHistoryHover() {
 
   root.addEventListener("pointermove", e => {
     const card = e.target.closest(".history-card");
-    const rec = card && _histGeoms[+card.dataset.idx];
+    const rec = card && store[+card.dataset.idx];
     if (!rec) { reset(); return; }
     if (hovered && hovered !== card) reset();
     hovered = card;
