@@ -12,6 +12,7 @@ const API = new URLSearchParams(location.search).get("api")
 const TABS = ["home", "queues", "validators", "consolidations", "methodology", "history"];
 const FAR_FUTURE = "18446744073709551615";
 const EPOCH_SECONDS = 384; // 32 slots × 12s
+const WITHDRAWABILITY_DELAY_EPOCHS = 256; // MIN_VALIDATOR_WITHDRAWABILITY_DELAY ≈ 27.3 h
 const GWEI = 1_000_000_000;
 const THEME_KEY = "bw_explorer_theme";
 
@@ -118,6 +119,21 @@ function epochToDate(epoch, currentEpoch) {
   const epochsAway = epoch - currentEpoch;
   const d = new Date(Date.now() + epochsAway * EPOCH_SECONDS * 1000);
   return fmtDate(d.toISOString());
+}
+function epochToISO(epoch, currentEpoch) {
+  return new Date(Date.now() + (epoch - currentEpoch) * EPOCH_SECONDS * 1000).toISOString();
+}
+/* A pending partial moves through three stages. The 256-epoch withdrawability
+   delay is the middle one, so "how long left" alone can't say whether it has
+   started, and that is the thing people actually want to know. */
+function partialStage(p, currentEpoch) {
+  const churnEpoch = p.withdrawable_epoch - WITHDRAWABILITY_DELAY_EPOCHS;
+  const eligible = p.eligible_now != null
+    ? p.eligible_now
+    : currentEpoch >= p.withdrawable_epoch;
+  if (eligible)                  return { cls: "chip active",   label: "SWEEP ELIGIBLE", churnEpoch };
+  if (currentEpoch >= churnEpoch) return { cls: "chip exit",     label: "IN 27.3 H DELAY", churnEpoch };
+  return { cls: "chip withdraw", label: "IN CHURN QUEUE", churnEpoch };
 }
 function statusChip(status) {
   if (!status) return { cls: "chip", label: "UNKNOWN" };
@@ -1186,19 +1202,28 @@ const validatorDetail = (() => {
     }
 
     if (pp.length > 0) {
-      const rows = pp.map(p => `
+      const rows = pp.map(p => {
+        const st = partialStage(p, d.current_epoch);
+        return `
         <tr>
           <td>${fmtEth(p.amount_eth, 4)} ETH</td>
-          <td>${fmtInt(p.withdrawable_epoch)}</td>
+          <td><span class="${st.cls}">${escapeHtml(st.label)}</span></td>
+          <td title="${escapeHtml(epochToISO(st.churnEpoch, d.current_epoch))}">
+            ${escapeHtml(epochToDate(st.churnEpoch, d.current_epoch))}
+            <span class="cell-sub">epoch ${fmtInt(st.churnEpoch)}</span>
+          </td>
+          <td title="${escapeHtml(epochToISO(p.withdrawable_epoch, d.current_epoch))}">
+            ${escapeHtml(epochToDate(p.withdrawable_epoch, d.current_epoch))}
+            <span class="cell-sub">epoch ${fmtInt(p.withdrawable_epoch)} · ${p.eta_seconds > 0 ? "~" + escapeHtml(fmtDur(p.eta_seconds)) : "now"}</span>
+          </td>
           <td>#${fmtInt(p.position)} <span style="color: var(--text-faint);">of ${fmtInt(p.queue_total)}</span></td>
-          <td>~${escapeHtml(fmtDur(p.eta_seconds))}</td>
-        </tr>
-      `).join("");
+        </tr>`;
+      }).join("");
       html += `
         <section class="v-section">
           <span class="kicker">— Pending partial withdrawals · ${pp.length} ${pp.length === 1 ? "entry" : "entries"}</span>
           <table class="v-table">
-            <thead><tr><th>Amount</th><th>Withdrawable epoch</th><th>Sweep position</th><th>ETA</th></tr></thead>
+            <thead><tr><th>Amount</th><th>Stage</th><th>Churn clears</th><th>Withdrawable</th><th>Sweep position</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </section>

@@ -5281,6 +5281,21 @@ table.full-table tbody tr.inst-member-row td:first-child {
 }
 .val-detail .v-table tbody tr:last-child td { border-bottom: 0; }
 
+/* Secondary line inside a v-table cell (epoch under a date, ETA under an epoch). */
+.val-detail .v-table .cell-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+/* Chips sit in a right-aligned numeric cell; keep them upright and compact. */
+.val-detail .v-table td .chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
 /* Withdrawal-creds hero */
 .val-detail .v-creds-hero {
   display: flex;
