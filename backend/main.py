@@ -327,18 +327,37 @@ async def validator_lookup(pubkey_or_index: str):
     # ---- Pending partial withdrawals involving this validator ----
     pp_results: list[dict] = []
     PARTIALS_PER_SLOT = 8  # MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP
+    pp_epochs = [int(p.get("withdrawable_epoch", 0)) for p in pending_partials]
     for i, p in enumerate(pending_partials):
         if int(p.get("validator_index", -1)) != index:
             continue
         amount_gwei = int(p["amount"])
-        eta_slots = i // PARTIALS_PER_SLOT
+        w_epoch = pp_epochs[i]
+        # An entry is untouchable by the sweep until current_epoch >= its
+        # withdrawable_epoch (get_expected_withdrawals breaks at the first
+        # ineligible entry), so the eligibility wait dominates the ETA — the
+        # 8-per-block sweep rate is only the tail.
+        wait_epochs = max(0, w_epoch - current_epoch)
+        if wait_epochs == 0:
+            # Already eligible: everything still ahead of us in the live queue
+            # is eligible too, and drains at 8 per block.
+            ahead = i
+        else:
+            # Entries ahead with an earlier withdrawable_epoch drain long before
+            # we become eligible (256/epoch of capacity); only the ones sharing
+            # our epoch are still queued ahead of us when our turn comes.
+            ahead = sum(1 for e in pp_epochs[:i] if e >= w_epoch)
         pp_results.append({
             "amount_gwei": amount_gwei,
             "amount_eth": round(amount_gwei / spec.GWEI, 4),
             "position": i + 1,
             "queue_total": len(pending_partials),
-            "withdrawable_epoch": int(p.get("withdrawable_epoch", 0)),
-            "eta_seconds": int(eta_slots * 12),
+            "withdrawable_epoch": w_epoch,
+            "eligible_now": wait_epochs == 0,
+            "eta_seconds": int(
+                wait_epochs * spec.SECONDS_PER_EPOCH
+                + (ahead // PARTIALS_PER_SLOT) * spec.SECONDS_PER_SLOT
+            ),
         })
 
     # ---- Pending consolidations involving this validator ----
@@ -452,42 +471,53 @@ async def predict_exit(balance: int = Query(..., ge=1, description="Balance in g
 async def predict_partial_withdrawal(
     amount: int = Query(..., ge=1, description="Withdrawal amount in gwei"),
 ):
-    """Partial withdrawals are NOT churn-gated. A new EL withdrawal request:
-      1) sits in pending_partial_withdrawals with
-         withdrawable_epoch = current_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY (256),
-      2) then becomes eligible for the sweep at ≤ 8 partials/payload × 32 slots/epoch.
+    """Spec-faithful partial-withdrawal prediction.
 
-    `predicted_epoch` = withdrawable_epoch (when the new request becomes eligible).
-    `withdrawable_epoch` = withdrawable_epoch + any sweep-queue position offset.
+    EIP-7002 process_withdrawal_request, partial branch:
+        exit_queue_epoch   = compute_exit_epoch_and_update_churn(state, to_withdraw)
+        withdrawable_epoch = exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
+
+    So a partial withdrawal IS churn-gated — it shares the activation/exit churn
+    with full exits — and the 256-epoch delay is added on top of the churn-gated
+    epoch, not on top of the current epoch.
+
+    `predicted_epoch`    = exit_queue_epoch (when churn clears the amount)
+    `withdrawable_epoch` = exit_queue_epoch + 256 (when the sweep may pay it)
     """
-    head_slot, total_active_balance, pending_partials = await asyncio.gather(
+    head_slot, total_active_balance, pending_partials, exiting = await asyncio.gather(
         beacon.get_head_slot(),
         beacon.get_total_active_balance(),
         beacon.get_pending_partial_withdrawals(),
+        beacon.get_active_exiting_validators(),
     )
     current_epoch = head_slot // spec.SLOTS_PER_EPOCH
     ae_churn_gwei = spec.get_activation_exit_churn_limit(total_active_balance)
 
-    rate_per_epoch = spec.MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP * spec.SLOTS_PER_EPOCH  # 256
+    cursor = cursors.derive_exit_cursor_with_partials(
+        exiting, pending_partials, current_epoch, total_active_balance
+    )
 
-    # Eligibility delay: a freshly submitted partial waits 256 epochs before the sweep can touch it.
-    eligible_epoch = current_epoch + spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY
+    exit_queue_epoch, _, _ = spec.compute_exit_epoch_and_update_churn(
+        earliest_exit_epoch=cursor["earliest_exit_epoch"],
+        exit_balance_to_consume=cursor["exit_balance_to_consume_gwei"],
+        exit_balance=amount,
+        ae_churn=ae_churn_gwei,
+        current_epoch=current_epoch,
+    )
+    withdrawable_epoch = exit_queue_epoch + spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY
 
-    # Sweep-position offset: the new partial appends to the end of the queue.
-    new_position = len(pending_partials)
-    sweep_offset_epochs = new_position // rate_per_epoch if rate_per_epoch else 0
-    process_epoch = eligible_epoch + sweep_offset_epochs
-    wait_epochs = max(0, process_epoch - current_epoch)
+    queue_wait_epochs = max(0, exit_queue_epoch - current_epoch)
+    total_wait_epochs = max(0, withdrawable_epoch - current_epoch)
 
     return models.PartialWithdrawalPredictionResponse(
         amount_gwei=amount,
         amount_eth=round(amount / spec.GWEI, 4),
-        predicted_epoch=eligible_epoch,
-        estimated_wait_epochs=wait_epochs,
-        estimated_wait_hours=round(wait_epochs * spec.SECONDS_PER_EPOCH / 3600, 2),
-        withdrawable_epoch=process_epoch,
+        predicted_epoch=exit_queue_epoch,
+        estimated_wait_epochs=queue_wait_epochs,
+        estimated_wait_hours=round(queue_wait_epochs * spec.SECONDS_PER_EPOCH / 3600, 2),
+        withdrawable_epoch=withdrawable_epoch,
         estimated_withdrawable_hours=round(
-            (process_epoch - current_epoch) * spec.SECONDS_PER_EPOCH / 3600, 2
+            total_wait_epochs * spec.SECONDS_PER_EPOCH / 3600, 2
         ),
         current_epoch=current_epoch,
         churn_limit_gwei=ae_churn_gwei,
@@ -1133,118 +1163,172 @@ async def methodology_consolidation(balance_eth: float = Query(default=32, gt=0,
 
 @app.get("/methodology/partial-withdrawal")
 async def methodology_partial_withdrawal(amount_eth: float = Query(default=1, gt=0)):
-    """Partial withdrawals are rate-limited by the withdrawal sweep, not the
-    activation/exit churn budget. Different model.
+    """Partial-withdrawal waterfall for a hypothetical EIP-7002 request.
+
+    A partial withdrawal IS churn-gated: process_withdrawal_request's partial
+    branch calls the same compute_exit_epoch_and_update_churn as a full exit,
+    then adds MIN_VALIDATOR_WITHDRAWABILITY_DELAY on top of that epoch. The
+    8-per-block sweep is only the tail of the wait, not the gate.
     """
     ctx = await _gather_state_context()
-    partials = await beacon.get_pending_partial_withdrawals()
+    partials, exiting = await asyncio.gather(
+        beacon.get_pending_partial_withdrawals(),
+        beacon.get_active_exiting_validators(),
+    )
 
-    # Per spec, MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP = 8 per payload.
-    # Combined with MAX_WITHDRAWALS_PER_PAYLOAD = 16 (which also runs the
-    # full-withdrawal sweep), 8 is the per-block ceiling.
+    ae_churn = spec.get_activation_exit_churn_limit(ctx["total_active_balance_gwei"])
+    amount_gwei = int(amount_eth * spec.GWEI)
     rate_per_epoch = spec.MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP * spec.SLOTS_PER_EPOCH
 
-    queue_step = trace.TraceStep(
-        id="pending-partials",
-        function="state.pending_partial_withdrawals",
+    cursor = cursors.derive_exit_cursor_with_partials(
+        active_exiting_validators=exiting,
+        pending_partial_withdrawals=partials,
+        current_epoch=ctx["current_epoch"],
+        total_active_balance=ctx["total_active_balance_gwei"],
+    )
+
+    cursor_step = trace.TraceStep(
+        id="exit-cursor",
+        function="state.earliest_exit_epoch / exit_balance_to_consume (derived)",
+        spec_file="electra/beacon-chain.md",
+        spec_lines=(770, 793),
+        spec_excerpt=(
+            "Exits AND partial withdrawals share one cursor, so both are re-derived:\n"
+            "  active_exiting validators  → booked at exit_epoch by effective_balance\n"
+            "  pending_partial_withdrawals → booked at (withdrawable_epoch − 256) by amount"
+        ),
+        substituted=(
+            f"exiting validators         = {len(exiting):,}\n"
+            f"pending partials           = {len(partials):,}\n"
+            f"distinct epoch buckets     = {len(cursor['by_epoch']):,}\n"
+            f"derived earliest_exit_epoch = {cursor['earliest_exit_epoch']:,}\n"
+            f"derived exit_balance_to_consume = "
+            f"{trace.gwei_to_eth(cursor['exit_balance_to_consume_gwei']):,.2f} ETH"
+        ),
+        intermediate={
+            "by_epoch_last_5": cursor["by_epoch"][-5:],
+            "total_buckets": len(cursor["by_epoch"]),
+        },
+        result={
+            "earliest_exit_epoch": cursor["earliest_exit_epoch"],
+            "exit_balance_to_consume_eth": trace.gwei_to_eth(cursor["exit_balance_to_consume_gwei"]),
+        },
+        notes=[
+            "A queued partial's exit_queue_epoch is recoverable as withdrawable_epoch − 256, "
+            "which is how its amount is booked back onto the shared churn cursor. Deriving from "
+            "the active_exiting set alone would badly understate the cursor.",
+        ],
+        refreshed_at=trace.now_iso(),
+        provenance="derived",
+    )
+
+    walk_step = spec.trace_exit_epoch_and_churn(
+        earliest_exit_epoch=cursor["earliest_exit_epoch"],
+        exit_balance_to_consume=cursor["exit_balance_to_consume_gwei"],
+        exit_balance=amount_gwei,
+        ae_churn=ae_churn,
+        current_epoch=ctx["current_epoch"],
+        cursor_provenance="derived",
+    )
+    exit_queue_epoch = walk_step.result["exit_epoch"]
+    withdrawable_epoch = walk_step.result["withdrawable_epoch"]
+
+    # Sweep tail: once eligible, entries already queued for the same epoch are
+    # paid first, 8 per block. Everything with an earlier withdrawable_epoch has
+    # long since drained (256/epoch of capacity), so only the same-epoch run counts.
+    ahead_same_epoch = sum(
+        1 for p in partials if int(p["withdrawable_epoch"]) >= withdrawable_epoch
+    )
+    sweep_slots = ahead_same_epoch // spec.MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP
+    sweep_seconds = sweep_slots * spec.SECONDS_PER_SLOT
+    process_epoch = withdrawable_epoch + sweep_slots // spec.SLOTS_PER_EPOCH
+
+    sweep_step = trace.TraceStep(
+        id="sweep-tail",
+        function="get_expected_withdrawals (pending-partials sweep)",
         spec_file="electra/beacon-chain.md",
         spec_lines=(1222, 1377),
         spec_excerpt=(
-            "MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP = 8 per payload\n"
-            "Sweep runs every block (32 blocks per epoch) — at most 256 partials/epoch.\n"
-            "FIFO; entry must satisfy withdrawable_epoch ≤ current_epoch to process."
+            "for withdrawal in state.pending_partial_withdrawals:\n"
+            "    if withdrawal.withdrawable_epoch > epoch or len(withdrawals) == 8:\n"
+            "        break\n"
+            "→ FIFO, 8 per block, and it BREAKS at the first not-yet-eligible entry."
         ),
         substituted=(
-            f"queue length              = {len(partials):,}\n"
-            f"max partials per block    = 8\n"
-            f"max partials per epoch    = 8 × 32 = {rate_per_epoch}\n"
-            f"epochs to drain queue     ≈ {len(partials) / rate_per_epoch:,.1f}"
+            f"queue length               = {len(partials):,}\n"
+            f"max partials per block     = {spec.MAX_PENDING_PARTIALS_PER_WITHDRAWALS_SWEEP}\n"
+            f"max partials per epoch     = 8 × 32 = {rate_per_epoch}\n"
+            f"queued for epoch ≥ {withdrawable_epoch:,} = {ahead_same_epoch:,} ahead of us\n"
+            f"sweep tail                 = {ahead_same_epoch:,} ÷ 8 = {sweep_slots:,} slots "
+            f"≈ {sweep_seconds / 60:.1f} min"
         ),
         result={
             "queue_length": len(partials),
             "rate_per_epoch": rate_per_epoch,
+            "ahead_same_epoch": ahead_same_epoch,
+            "sweep_offset_slots": sweep_slots,
+            "sweep_offset_seconds": sweep_seconds,
             "epochs_to_drain": round(len(partials) / rate_per_epoch, 2) if rate_per_epoch else None,
         },
         notes=[
-            "Partial withdrawals are not churn-gated. They share the per-payload sweep cap "
-            "with the full-withdrawal sweep, so real throughput can be lower than the 256/epoch ceiling.",
+            "The sweep is the tail of the wait, not the gate — the break on withdrawable_epoch "
+            "means an ineligible entry blocks nothing and waits on churn instead.",
+            "8 per payload is shared with the full-withdrawal sweep, so real throughput can sit "
+            "below the 256/epoch ceiling.",
         ],
         refreshed_at=trace.now_iso(),
         provenance="live",
     )
 
-    # Eligibility delay: a freshly submitted partial waits 256 epochs.
-    eligible_epoch = ctx["current_epoch"] + spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY
-    delay_step = trace.TraceStep(
-        id="withdrawability-delay",
-        function="MIN_VALIDATOR_WITHDRAWABILITY_DELAY",
-        spec_file="electra/beacon-chain.md",
-        spec_lines=(1, 1),
-        spec_excerpt=(
-            "On EL withdrawal request:\n"
-            "  state.pending_partial_withdrawals.append(PendingPartialWithdrawal(\n"
-            "      validator_index=..., amount=...,\n"
-            "      withdrawable_epoch=Epoch(get_current_epoch(state) + MIN_VALIDATOR_WITHDRAWABILITY_DELAY)\n"
-            "  ))\n"
-            "→ entry is ineligible for the sweep until epoch ≥ withdrawable_epoch."
-        ),
-        substituted=(
-            f"new request submitted at epoch {ctx['current_epoch']:,}\n"
-            f"withdrawable_epoch = {ctx['current_epoch']:,} + {spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY} = {eligible_epoch:,}\n"
-            f"≈ {spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY * spec.SECONDS_PER_EPOCH / 3600:.2f}h after request"
-        ),
-        result={
-            "withdrawable_epoch": eligible_epoch,
-            "delay_epochs": spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
-            "delay_seconds": spec.MIN_VALIDATOR_WITHDRAWABILITY_DELAY * spec.SECONDS_PER_EPOCH,
-        },
-        refreshed_at=trace.now_iso(),
-        provenance="constant",
-    )
+    wait_to_exit_q = (exit_queue_epoch - ctx["current_epoch"]) * spec.SECONDS_PER_EPOCH
+    wait_seconds = (withdrawable_epoch - ctx["current_epoch"]) * spec.SECONDS_PER_EPOCH + sweep_seconds
 
-    # Sweep position: appended to the tail of the current queue.
-    new_position = len(partials)
-    sweep_offset_epochs = new_position // rate_per_epoch if rate_per_epoch else 0
-    process_epoch = eligible_epoch + sweep_offset_epochs
-    wait_step = trace.TraceStep(
-        id="new-partial-wait",
-        function="eligible_epoch + sweep position",
+    final_step = trace.TraceStep(
+        id="final",
+        function="partial-withdrawal summary",
         spec_file="(derived)",
         spec_lines=(0, 0),
         spec_excerpt=(
-            "sweep_offset_epochs = floor(queue_position / rate_per_epoch)\n"
-            "process_epoch = withdrawable_epoch + sweep_offset_epochs"
+            "exit_queue_epoch   = compute_exit_epoch_and_update_churn(state, amount)\n"
+            "withdrawable_epoch = exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY\n"
+            "paid               = first sweep at/after withdrawable_epoch"
         ),
         substituted=(
-            f"queue position             = {new_position:,}\n"
-            f"sweep_offset_epochs        = {new_position:,} ÷ {rate_per_epoch} = {sweep_offset_epochs:,}\n"
-            f"process_epoch              = {eligible_epoch:,} + {sweep_offset_epochs:,} = {process_epoch:,}\n"
-            f"wait from now              ≈ {(process_epoch - ctx['current_epoch']) * spec.SECONDS_PER_EPOCH / 3600:,.2f}h"
+            f"exit_queue_epoch    = {exit_queue_epoch:,} "
+            f"(≈ {wait_to_exit_q / 3600:,.2f} h — churn)\n"
+            f"withdrawable_epoch  = {withdrawable_epoch:,} (= {exit_queue_epoch:,} + 256)\n"
+            f"sweep tail          ≈ {sweep_seconds / 60:.1f} min\n"
+            f"total wait          ≈ {wait_seconds / 3600:,.2f} h"
         ),
         result={
+            "exit_queue_epoch": exit_queue_epoch,
+            "withdrawable_epoch": withdrawable_epoch,
             "process_epoch": process_epoch,
+            "wait_to_exit_queue_seconds": wait_to_exit_q,
+            "wait_to_withdrawable_seconds": (withdrawable_epoch - ctx["current_epoch"]) * spec.SECONDS_PER_EPOCH,
+            "sweep_offset_seconds": sweep_seconds,
             "wait_epochs": process_epoch - ctx["current_epoch"],
-            "wait_seconds": (process_epoch - ctx["current_epoch"]) * spec.SECONDS_PER_EPOCH,
+            "wait_seconds": wait_seconds,
             "rate_per_epoch": rate_per_epoch,
         },
-        notes=[
-            f"Amount ({amount_eth} ETH) doesn't affect wait — sweep position is FIFO by request order."
-        ],
         refreshed_at=trace.now_iso(),
         provenance="computed",
     )
 
     steps = [
         _trace_state_inputs(ctx),
-        queue_step,
-        delay_step,
-        wait_step,
+        *_churn_steps(ctx["total_active_balance_gwei"]),
+        spec.trace_activation_exit_epoch(ctx["current_epoch"]),
+        cursor_step,
+        walk_step,
+        sweep_step,
+        final_step,
     ]
     return {
         "kind": "partial-withdrawal",
         "input": {"amount_eth": amount_eth},
         "trace": [s.to_dict() for s in steps],
-        "summary": wait_step.result,
+        "summary": final_step.result,
         "refreshed_at": trace.now_iso(),
     }
 

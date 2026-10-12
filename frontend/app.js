@@ -622,7 +622,7 @@ function renderPredictResult(r, amount) {
   const heroLabel = isFull ? "Total time to withdrawable" : "Time until sweep-eligible";
   const sub = isFull
     ? "includes 256-epoch withdrawability delay · sweep position not included"
-    : "256-epoch withdrawability delay applies to fresh requests";
+    : "churn-gated, then +256-epoch withdrawability delay · sweep position not included";
   const modeLabel = isFull ? "Full exit" : "Partial";
 
   $("#predict-result").innerHTML = `
@@ -642,7 +642,7 @@ function renderPredictResult(r, amount) {
         <span class="sub">${fmtInt(queueEpochs)} epoch${queueEpochs === 1 ? "" : "s"} ahead${queueEpochs === 0 ? " · no wait" : ""}</span>
       </div>
       <div class="cell">
-        <span class="k">${isFull ? "Exit epoch" : "Eligible epoch"}</span>
+        <span class="k">${isFull ? "Exit epoch" : "Exit-queue epoch"}</span>
         <span class="v">${fmtInt(exitEpoch)}</span>
         <span class="sub">${escapeHtml(epochToDate(exitEpoch, r.current_epoch))}</span>
       </div>
@@ -1595,6 +1595,15 @@ function consolidationChurnEth(ch) {
   return Math.max(0, balanceChurn - (ch.churn_limit_eth || 0));
 }
 
+/* Consolidations drain at consolidation churn (balance churn − ae churn), a
+   budget entries and exits never touch — so the queue gets its own wait
+   reading rather than borrowing the exit-queue one. */
+function consolidationWaitHours(c, ch) {
+  const consChurn = consolidationChurnEth(ch);
+  if (!c || consChurn == null || consChurn <= 0) return null;
+  return ((c.total_eth || 0) / consChurn) * EPOCH_SECONDS / 3600;
+}
+
 function loadQueues() {
   const tasks = [];
   if (!state.entryQueue || !state.exitQueue || !state.churn) {
@@ -1744,13 +1753,25 @@ function exitScheduleTable(perEpoch, currentEpoch) {
 
 function renderQueuesConsol() {
   const c = state.consolidations, ch = state.churn;
-  const kpiRoot = $("#q-consol-kpis"), listRoot = $("#q-consol-list");
+  const gaugeRoot = $("#q-consol-gauge"), kpiRoot = $("#q-consol-kpis"), listRoot = $("#q-consol-list");
   if (!c || c.error) {
+    if (gaugeRoot) gaugeRoot.innerHTML = _loadingGauge();
     if (kpiRoot) kpiRoot.innerHTML = _loadingCells(4);
     if (listRoot && c && c.error) listRoot.innerHTML = `<p class="q-empty">Could not load consolidations · ${escapeHtml(c.error)}</p>`;
     return;
   }
   const consChurn = consolidationChurnEth(ch);
+  const waitH = consolidationWaitHours(c, ch);
+  if (gaugeRoot) {
+    // churn may still be in flight — don't paint a misleading "clear" arc.
+    gaugeRoot.innerHTML = waitH == null
+      ? _loadingGauge()
+      : gaugeHTML({
+          title: "Consolidation queue · wait", value: fmtDHM(waitH * 3600),
+          severity: queueTier(waitH), footLeft: "CLEAR", footRight: "HIGH",
+          pct: queueFillPct(waitH),
+        }) + `<span class="gauge-meta">${fmtInt(c.count)} source${c.count === 1 ? "" : "s"} · ${fmtEth(c.total_eth, 0)} ETH queued</span>`;
+  }
   if (kpiRoot) kpiRoot.innerHTML = `
     <div class="cell">
       <span class="k">Pending consolidations</span>
@@ -1772,7 +1793,7 @@ function renderQueuesConsol() {
     <div class="cell">
       <span class="k">Consolidation churn</span>
       <span class="v">${consChurn == null ? "—" : fmtEth(consChurn, 0)}</span>
-      <span class="sub">ETH / epoch merged</span>
+      <span class="sub">ETH / epoch merged${waitH == null ? "" : ` · ${sevSubHTML(queueTier(waitH))}`}</span>
     </div>`;
   if (listRoot) {
     listRoot.innerHTML = (c.targets && c.targets.length)
@@ -2158,7 +2179,7 @@ const methodology = (() => {
     } else if (kind === "partial-withdrawal") {
       label = "— Partial withdrawal · final answer";
       headline = `Processes in epoch <em>${fmtInt(summary.process_epoch)}</em> · <em>~${fmtDaysHours(summary.wait_seconds)}</em>.`;
-      deck = `Position ${fmtInt(summary.wait_epochs * (summary.rate_per_epoch ?? 256))} in the sweep queue · rate-limited by the withdrawal sweep, not churn.`;
+      deck = `Churn clears at epoch ${fmtInt(summary.exit_queue_epoch)} · withdrawable at ${fmtInt(summary.withdrawable_epoch)} (+256) · sweep tail ~${Math.round((summary.sweep_offset_seconds ?? 0) / 60)} min.`;
     }
 
     el.innerHTML = `

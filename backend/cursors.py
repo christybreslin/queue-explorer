@@ -16,6 +16,7 @@ carries provenance="derived" so the methodology UI flags it as a re-emulation.
 from __future__ import annotations
 
 from backend.spec import (
+    MIN_VALIDATOR_WITHDRAWABILITY_DELAY,
     SECONDS_PER_EPOCH,
     compute_activation_exit_epoch,
     get_activation_exit_churn_limit,
@@ -63,6 +64,61 @@ def derive_exit_cursor(
     # If `earliest` was bumped to floor (queue ahead of cursor) the remaining is fresh ae_churn.
     if floor > max(by_epoch.keys()):
         remaining = ae_churn
+
+    return {
+        "earliest_exit_epoch": earliest,
+        "exit_balance_to_consume_gwei": remaining,
+        "ae_churn_gwei": ae_churn,
+        "provenance": "derived",
+        "by_epoch": sorted(by_epoch.items()),
+    }
+
+
+def derive_exit_cursor_with_partials(
+    active_exiting_validators: list[dict],
+    pending_partial_withdrawals: list[dict],
+    current_epoch: int,
+    total_active_balance: int,
+) -> dict:
+    """Same cursor as derive_exit_cursor, but also counting churn consumed by
+    queued EIP-7002 partial withdrawal requests.
+
+    process_withdrawal_request's partial branch calls the *same*
+    compute_exit_epoch_and_update_churn as a full exit, so pending partials
+    push state.earliest_exit_epoch just like exiting validators do. Deriving
+    from the exiting set alone badly underestimates the cursor whenever the
+    partials queue is non-trivial.
+
+    Each queued partial was assigned
+        withdrawable_epoch = exit_queue_epoch + MIN_VALIDATOR_WITHDRAWABILITY_DELAY
+    so its exit_queue_epoch is recoverable as withdrawable_epoch - 256, and the
+    amount it booked is `amount` (not an effective balance).
+    """
+    ae_churn = get_activation_exit_churn_limit(total_active_balance)
+    floor = compute_activation_exit_epoch(current_epoch)
+
+    by_epoch: dict[int, int] = {}
+    for v in active_exiting_validators:
+        e = int(v["validator"]["exit_epoch"])
+        by_epoch[e] = by_epoch.get(e, 0) + int(v["validator"]["effective_balance"])
+    for p in pending_partial_withdrawals:
+        e = int(p["withdrawable_epoch"]) - MIN_VALIDATOR_WITHDRAWABILITY_DELAY
+        by_epoch[e] = by_epoch.get(e, 0) + int(p["amount"])
+
+    if not by_epoch:
+        return {
+            "earliest_exit_epoch": floor,
+            "exit_balance_to_consume_gwei": ae_churn,
+            "ae_churn_gwei": ae_churn,
+            "provenance": "derived",
+            "by_epoch": [],
+        }
+
+    latest = max(by_epoch.keys())
+    earliest = max(latest, floor)
+    # Budget left in the cursor epoch = ae_churn minus what is already booked
+    # there; if the floor overtook the queue the epoch is untouched, so full churn.
+    remaining = ae_churn if floor > latest else max(0, ae_churn - by_epoch.get(earliest, 0))
 
     return {
         "earliest_exit_epoch": earliest,
